@@ -249,5 +249,6 @@ export function useAISpeech(webcamStream) {
     isInterviewCompleted,
     startInterview,
     nextQuestion: stopListeningAndSend,
+    get socketId() { return socketRef.current?.id; }
   };
 }

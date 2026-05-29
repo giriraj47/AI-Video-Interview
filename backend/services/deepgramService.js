@@ -65,23 +65,11 @@ export class DeepgramService {
     }
   }
 
-  // Helper to convert ReadableStream to Buffer cleanly (already correct)
-  async streamToBuffer(stream) {
-    const chunks = [];
-
-    // Node.js v24 supports async iterators naturally on streams
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
-    }
-
-    return Buffer.concat(chunks);
-  }
-
   // Helper to convert ReadableStream/AsyncIterable to Buffer cleanly
   async streamToBuffer(stream) {
     const chunks = [];
 
-    // Handle modern Node.js / web stream async iterators seamlessly
+    // Node.js v24 supports async iterators naturally on streams
     for await (const chunk of stream) {
       chunks.push(Buffer.from(chunk));
     }

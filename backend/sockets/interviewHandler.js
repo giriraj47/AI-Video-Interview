@@ -1,7 +1,6 @@
-import { GroqService } from "../services/groqService.js";
+import { groqService } from "../services/groqService.js";
 import { DeepgramService } from "../services/deepgramService.js";
 
-const groqService = new GroqService();
 const deepgramService = new DeepgramService();
 
 export const setupInterviewSocket = (socket) => {
