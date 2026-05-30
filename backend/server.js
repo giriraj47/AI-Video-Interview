@@ -79,6 +79,31 @@ app.post("/api/save-interview", async (req, res) => {
   }
 });
 
+// Middleware to verify admin secret key
+const checkAdminSecret = (req, res, next) => {
+  const secret = req.headers["x-admin-secret"] || req.query.secret;
+  if (!secret || secret !== process.env.ADMIN_SECRET) {
+    return res.status(401).json({ error: "Unauthorized access: Invalid secret key" });
+  }
+  next();
+};
+
+// Verify Admin Secret Route
+app.get("/api/admin/verify", checkAdminSecret, (req, res) => {
+  res.status(200).json({ success: true, message: "Authorized" });
+});
+
+// Fetch All Interviews Route
+app.get("/api/admin/interviews", checkAdminSecret, async (req, res) => {
+  try {
+    const interviews = await Interview.find().sort({ createdAt: -1 });
+    res.status(200).json({ success: true, interviews });
+  } catch (error) {
+    console.error("[API] Error fetching interviews:", error);
+    res.status(500).json({ error: "Failed to fetch interviews" });
+  }
+});
+
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`🚀 AI Backend running on port ${PORT}`);

@@ -5,6 +5,7 @@ import Layout from "./pages/Layout";
 import SetupPage from "./components/SetupPage";
 import InterviewPage from "./pages/InterviewPage";
 import ResultsPage from "./components/ResultsPage";
+import AdminPage from "./pages/AdminPage";
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="interview" element={<InterviewPage />} />
             <Route path="result" element={<ResultsPage />} />
           </Route>
+          <Route path="admin" element={<AdminPage />} />
         </Routes>
       </BrowserRouter>
     </InterviewProvider>
