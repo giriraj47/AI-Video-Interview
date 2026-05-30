@@ -63,74 +63,55 @@ export default function InterviewPage() {
   }, [interviewState, candidateInfo, media, ai]);
 
   // Watch for interview completion
+  // Watch for interview completion
   useEffect(() => {
     const saveInterview = async () => {
-      // 1. Capture contextual values locally before wiping state
       const targetInterviewId = candidateInfo?.interviewId;
+      if (!targetInterviewId) return;
 
-      if (!targetInterviewId) {
-        console.error(
-          "[Frontend] Cannot finalize. targetInterviewId is missing!",
-        );
-        return;
-      }
+      try {
+        console.log("[InterviewPage] Finalizing local video recording...");
+        let finalVideoUrl = null;
 
-      console.log(
-        "[InterviewPage] Interview concluded. Dispatching background upload thread...",
-      );
-
-      // 2. Define our non-blocking background worker
-      const executeBackgroundPipeline = async () => {
-        try {
-          let finalVideoUrl = null;
-
-          // Stop recording and process asset upload to backend/Cloudinary
-          if (media.stopVideoRecordingAndUpload) {
-            const uploadResult =
-              await media.stopVideoRecordingAndUpload(targetInterviewId);
-            finalVideoUrl = uploadResult?.videoUrl;
-            console.log(
-              "[Background Process] Cloudinary CDN asset ready:",
-              finalVideoUrl,
-            );
-          }
-
+        // 1. 🛑 STOP AND GENERATE: This stops the streams locally and triggers the upload signature instantly
+        if (media.stopVideoRecordingAndUpload) {
+          // We await JUST the upload initialization to ensure the browser hands off the file payload safely
+          const uploadResult =
+            await media.stopVideoRecordingAndUpload(targetInterviewId);
+          finalVideoUrl = uploadResult?.videoUrl;
           console.log(
-            "[Background Process] Shipping metadata payload payload...",
-          );
-          const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              interviewId: targetInterviewId,
-              videoUrl: finalVideoUrl,
-            }),
-          });
-
-          if (!response.ok) {
-            console.error(
-              "Background metadata save execution failed:",
-              await response.text(),
-            );
-          } else {
-            console.log(
-              "[Background Process] Video tracking successfully written to MongoDB.",
-            );
-          }
-        } catch (error) {
-          console.error(
-            "Exception handled inside background execution worker:",
-            error,
+            "[InterviewPage] Cloudinary upload dispatched cleanly:",
+            finalVideoUrl,
           );
         }
-      };
 
-      // 3. 🔥 FIRE AND FORGET: Trigger worker WITHOUT an 'await' operator
-      executeBackgroundPipeline();
+        // 2. 🚀 TRIGGER QUEUE: Ship the metadata & video link immediately to your backend
+        console.log(
+          "[InterviewPage] Dispatching finalization payload to background queue...",
+        );
+        const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            interviewId: targetInterviewId,
+            videoUrl: finalVideoUrl, // This will now actually have your Cloudinary URL!
+          }),
+        });
 
-      // 4. 🚀 INSTANT ROUTING: Free the interface instantly
+        if (!response.ok) {
+          console.error(
+            "Failed to queue interview data payload:",
+            await response.text(),
+          );
+        }
+      } catch (error) {
+        console.error("Critical error in frontend save sequence:", error);
+      }
+
+      // 3. 🏁 INSTANT ROUTE: Move the user immediately.
+      // They don't have to wait for Groq anymore because Inngest handles that asynchronously!
       console.log(
-        "[InterviewPage] Routing candidate to results interface instantly.",
+        "[InterviewPage] Cleaning up state context and routing candidate.",
       );
       ai.resetSpeech();
       media.handleConfirmExit();
