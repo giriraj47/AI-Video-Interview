@@ -7,12 +7,11 @@ export function useInterviewMedia() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
-  // const [recordedChunks, setRecordedChunks] = useState([]);
 
-  const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const screenStreamRef = useRef(null);
 
+  // 📦 Maintained mutable references for recording cleanly without React state crashes
   const videoRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
 
@@ -21,10 +20,10 @@ export function useInterviewMedia() {
       ? "https://ai-video-interview-1-ca9s.onrender.com"
       : "http://localhost:4000";
 
+  // 🚀 Start session recording using clean lightweight configuration
   const startVideoRecording = (stream) => {
     if (!stream) return;
 
-    // 🛑 SAFETY GUARD: If a recorder is already open/running, exit immediately!
     if (
       videoRecorderRef.current &&
       videoRecorderRef.current.state !== "inactive"
@@ -37,10 +36,10 @@ export function useInterviewMedia() {
 
     videoChunksRef.current = [];
 
-    // 🚀 PERFORMANCE FIX: Use lightweight VP8 instead of heavy VP9
+    // Lightweight VP8 instead of heavy VP9 to keep CPU usage minimal
     let options = { mimeType: "video/webm;codecs=vp8,opus" };
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-      options.mimeType = "video/webm"; // Browser default configuration
+      options.mimeType = "video/webm";
     }
 
     try {
@@ -48,12 +47,16 @@ export function useInterviewMedia() {
 
       videoRecorderRef.current.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
+          const timestamp = new Date().toLocaleTimeString();
+          console.log(
+            `[MediaRecorder] 📦 Chunk captured safely! Size: ${(e.data.size / 1024).toFixed(2)} KB at ${timestamp}`,
+          );
           videoChunksRef.current.push(e.data);
         }
       };
 
-      // Increase timeslice to 10 seconds (10000) to fire the thread less frequently
-      videoRecorderRef.current.start(10000);
+      // Check chunks every 5 seconds to keep memory buffer light but stable
+      videoRecorderRef.current.start(5000);
       console.log(
         "[Media] Full session video recording started safely with lightweight codec.",
       );
@@ -62,12 +65,14 @@ export function useInterviewMedia() {
     }
   };
 
+  // 🛑 Stop recording and return server upload confirmation back to page context lifecycle
   const stopVideoRecordingAndUpload = async (interviewId) => {
     return new Promise((resolve, reject) => {
       if (
         !videoRecorderRef.current ||
         videoRecorderRef.current.state === "inactive"
       ) {
+        console.warn("[Media] Cannot stop recording: Recorder is not active.");
         return resolve(null);
       }
 
@@ -82,9 +87,10 @@ export function useInterviewMedia() {
         formData.append("interviewId", interviewId);
 
         try {
+          console.log("[Media] Dispatching file binary to backend route...");
           const response = await fetch(`${BACKEND_URL}/api/upload-recording`, {
             method: "POST",
-            body: formData, // Automatically sets multi-part headers
+            body: formData,
           });
           const data = await response.json();
           resolve(data);
@@ -98,43 +104,15 @@ export function useInterviewMedia() {
     });
   };
 
-  // Make sure to expose these two functions in your hook's return statement!
-
-  // Keep refs up-to-date for safe unmount cleanup
   useEffect(() => {
     streamRef.current = webcamStream;
   }, [webcamStream]);
+
   useEffect(() => {
     screenStreamRef.current = screenStream;
   }, [screenStream]);
 
-  const startMediaRecording = (stream) => {
-    if (!stream) return;
-    try {
-      let options = { mimeType: "video/webm;codecs=vp9,opus" };
-      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options = { mimeType: "video/webm" };
-      }
-
-      const recorder = new MediaRecorder(stream, options);
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          const timestamp = new Date().toLocaleTimeString();
-          console.log(
-            `[MediaRecorder] 📦 Chunk captured! Size: ${(event.data.size / 1024).toFixed(2)} KB at ${timestamp}`,
-          );
-          setRecordedChunks((prev) => [...prev, event.data]);
-        }
-      };
-
-      recorder.start(3000);
-    } catch (err) {
-      console.error("Failed to initialize MediaRecorder:", err);
-    }
-  };
-
+  // 🔌 Initialize streams safely
   const initInterviewMedia = async () => {
     setStatus("requesting");
     setErrorMessage("");
@@ -151,13 +129,15 @@ export function useInterviewMedia() {
       const screen = await navigator.mediaDevices.getDisplayMedia({
         video: true,
       });
-      setScreenStream(screen);
 
+      setScreenStream(screen);
       setWebcamStream(webcam);
       setIsMicOn(true);
       setIsCamOn(true);
       setStatus("ready");
-      startMediaRecording(webcam);
+
+      // 💡 Start the correct recording engine right away!
+      startVideoRecording(webcam);
     } catch (error) {
       console.error("Error during media setup:", error);
       setStatus("error");
@@ -185,11 +165,11 @@ export function useInterviewMedia() {
 
   const handleConfirmExit = () => {
     if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state !== "inactive"
+      videoRecorderRef.current &&
+      videoRecorderRef.current.state !== "inactive"
     ) {
       try {
-        mediaRecorderRef.current.stop();
+        videoRecorderRef.current.stop();
       } catch (err) {
         console.error("Error stopping media recorder on exit:", err);
       }
@@ -203,14 +183,13 @@ export function useInterviewMedia() {
     setStatus("idle");
   };
 
-  // Safe global unmount hook
   useEffect(() => {
     return () => {
       if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state !== "inactive"
+        videoRecorderRef.current &&
+        videoRecorderRef.current.state !== "inactive"
       ) {
-        mediaRecorderRef.current.stop();
+        videoRecorderRef.current.stop();
       }
       if (streamRef.current)
         streamRef.current.getTracks().forEach((t) => t.stop());
