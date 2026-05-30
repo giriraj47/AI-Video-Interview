@@ -5,17 +5,25 @@ import CandidateStream from "../components/CandidateStream";
 import TranscriptionPanel from "../components/TranscriptionPanel";
 import { useInterview } from "../context/InterviewContext";
 import { BACKEND_URL } from "../config";
+import { useRef } from "react";
 
 export default function InterviewPage() {
-  const { videoRef, media, proctor, ai, candidateInfo, setCandidateInfo } = useInterview();
+  const { videoRef, media, proctor, ai, candidateInfo, setCandidateInfo } =
+    useInterview();
   const [countdown, setCountdown] = useState(3);
-  const [interviewState, setInterviewState] = useState(media.status === "ready" ? "countdown" : "media-setup");
+  const [interviewState, setInterviewState] = useState(
+    media.status === "ready" ? "countdown" : "media-setup",
+  );
   const navigate = useNavigate();
+
+  const hasStartedRecording = useRef(false);
 
   // If there's no candidate profile, redirect them back to setup
   useEffect(() => {
     if (!candidateInfo && !ai.isInterviewCompleted) {
-      console.warn("[InterviewPage] Candidate info is missing, redirecting to /setup");
+      console.warn(
+        "[InterviewPage] Candidate info is missing, redirecting to /setup",
+      );
       navigate("/setup");
     }
   }, [candidateInfo, ai.isInterviewCompleted, navigate]);
@@ -38,43 +46,91 @@ export default function InterviewPage() {
     }
   }, [interviewState, countdown]);
 
-  // Trigger interview start
+  // 🔥 FIX 1: Safely trigger recording once when the interview goes live
   useEffect(() => {
-    if (interviewState === "interview" && candidateInfo?.interviewId) {
+    if (
+      interviewState === "interview" &&
+      candidateInfo?.interviewId &&
+      !hasStartedRecording.current // 👈 Check the lock
+    ) {
       ai.startInterview(candidateInfo.interviewId);
+
+      if (media.startVideoRecording) {
+        media.startVideoRecording(media.webcamStream);
+        hasStartedRecording.current = true; // 👈 Lock it down immediately
+      }
     }
-  }, [interviewState, candidateInfo]);
+  }, [interviewState, candidateInfo, media, ai]);
 
   // Watch for interview completion
   useEffect(() => {
     const saveInterview = async () => {
       try {
-        console.log("[InterviewPage] Saving interview...");
+        console.log(
+          "[InterviewPage] Halting recorder and processing video asset...",
+        );
+        let finalVideoUrl = null;
+
+        // 🔥 FIX 2: Await the FFmpeg processing and Cloudinary upload response
+        if (media.stopVideoRecordingAndUpload) {
+          const uploadResult = await media.stopVideoRecordingAndUpload(
+            candidateInfo.interviewId,
+          );
+          finalVideoUrl = uploadResult?.videoUrl;
+          console.log(
+            "[InterviewPage] Cloudinary CDN deployment ready:",
+            finalVideoUrl,
+          );
+        }
+
+        console.log(
+          "[InterviewPage] Dispatched transcript logs saving payload...",
+        );
         const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            interviewId: candidateInfo.interviewId
-          })
+            interviewId: candidateInfo.interviewId,
+            videoUrl: finalVideoUrl, // 👈 Send the generated Cloudinary video link to MongoDB!
+          }),
         });
+
         if (!response.ok) {
-          console.error("Failed to save interview", await response.text());
+          console.error(
+            "Failed to save interview metadata",
+            await response.text(),
+          );
         }
       } catch (error) {
-        console.error("Error saving interview:", error);
+        console.error(
+          "Critical error inside compilation save pipeline:",
+          error,
+        );
       }
-      
-      console.log("[InterviewPage] Interview complete, navigating to /result");
+
+      console.log("[InterviewPage] Interview clean, navigating to /result");
       ai.resetSpeech();
       media.handleConfirmExit();
       setCandidateInfo(null);
       navigate("/result");
     };
 
-    if (ai.isInterviewCompleted && interviewState === "interview" && candidateInfo?.interviewId) {
+    if (
+      ai.isInterviewCompleted &&
+      interviewState === "interview" &&
+      candidateInfo?.interviewId
+    ) {
       saveInterview();
     }
-  }, [ai.isInterviewCompleted, interviewState, navigate, candidateInfo, setCandidateInfo]);
+  }, [
+    ai.isInterviewCompleted,
+    interviewState,
+    navigate,
+    candidateInfo,
+    setCandidateInfo,
+    media,
+    ai,
+  ]);
 
   return (
     <div className="flex-1 flex flex-col justify-center w-full">
@@ -96,18 +152,18 @@ export default function InterviewPage() {
 
       {interviewState === "media-setup" && (
         <div className="w-full max-w-2xl mx-auto py-12">
-            <CandidateStream
-              videoRef={videoRef}
-              status={media.status}
-              webcamStream={media.webcamStream}
-              errorMessage={media.errorMessage}
-              initInterviewMedia={media.initInterviewMedia}
-              isMicOn={media.isMicOn}
-              isCamOn={media.isCamOn}
-              onToggleMic={media.handleToggleMic}
-              onToggleCam={media.handleToggleCam}
-              strikeCount={proctor.strikeCount}
-            />
+          <CandidateStream
+            videoRef={videoRef}
+            status={media.status}
+            webcamStream={media.webcamStream}
+            errorMessage={media.errorMessage}
+            initInterviewMedia={media.initInterviewMedia}
+            isMicOn={media.isMicOn}
+            isCamOn={media.isCamOn}
+            onToggleMic={media.handleToggleMic}
+            onToggleCam={media.handleToggleCam}
+            strikeCount={proctor.strikeCount}
+          />
         </div>
       )}
 

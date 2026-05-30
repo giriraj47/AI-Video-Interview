@@ -7,10 +7,12 @@ import mongoose from "mongoose";
 import { setupInterviewSocket } from "./sockets/interviewHandler.js";
 import { Interview } from "./models/Interview.js";
 import { groqService } from "./services/groqService.js";
+import uploadRoute from "./routes/upload.route.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/api", uploadRoute);
 
 // Connect to MongoDB
 mongoose
@@ -49,26 +51,30 @@ app.post("/api/start-interview", async (req, res) => {
     // Check if an "In Progress" session already exists for this candidate
     let interview = await Interview.findOne({
       candidateEmail: email.toLowerCase(),
-      status: "In Progress"
+      status: "In Progress",
     });
 
     if (interview) {
-      console.log(`[API] Active interview session found for ${email}. Resuming: ${interview._id}`);
+      console.log(
+        `[API] Active interview session found for ${email}. Resuming: ${interview._id}`,
+      );
     } else {
       interview = new Interview({
         candidateEmail: email,
         phoneNumber,
         status: "In Progress",
-        transcript: []
+        transcript: [],
       });
       await interview.save();
-      console.log(`[API] Created new interview session for ${email}: ${interview._id}`);
+      console.log(
+        `[API] Created new interview session for ${email}: ${interview._id}`,
+      );
     }
 
     res.status(200).json({
       success: true,
       id: interview._id,
-      transcript: interview.transcript
+      transcript: interview.transcript,
     });
   } catch (error) {
     console.error("[API] Error initializing interview:", error);
@@ -79,10 +85,12 @@ app.post("/api/start-interview", async (req, res) => {
 // Save/Finalize Interview Route
 app.post("/api/save-interview", async (req, res) => {
   try {
-    const { interviewId } = req.body;
+    const { interviewId, videoUrl } = req.body;
 
     if (!interviewId) {
-      return res.status(400).json({ error: "Missing required field: interviewId" });
+      return res
+        .status(400)
+        .json({ error: "Missing required field: interviewId" });
     }
 
     // Check if session exists in memory. If not, reload history from DB and initialize session.
@@ -92,7 +100,9 @@ app.post("/api/save-interview", async (req, res) => {
       if (!interviewDb) {
         return res.status(404).json({ error: "Interview record not found" });
       }
-      console.log(`[API] Reloading session context from database for evaluation: ${interviewId}`);
+      console.log(
+        `[API] Reloading session context from database for evaluation: ${interviewId}`,
+      );
       groqService.initSession(interviewId, interviewDb.transcript);
       session = groqService.sessions[interviewId];
     }
@@ -101,13 +111,18 @@ app.post("/api/save-interview", async (req, res) => {
     const evaluation = await groqService.evaluateInterview(interviewId);
 
     console.log(`[API] Finalizing interview document in database...`);
+    const updateFields = {
+      evaluation,
+      status: "Completed",
+    };
+    if (videoUrl) {
+      updateFields.videoUrl = videoUrl;
+    }
+
     const interview = await Interview.findByIdAndUpdate(
       interviewId,
-      {
-        evaluation,
-        status: "Completed",
-      },
-      { new: true }
+      updateFields,
+      { new: true },
     );
 
     // Clean up session in memory
@@ -128,7 +143,9 @@ app.post("/api/save-interview", async (req, res) => {
 const checkAdminSecret = (req, res, next) => {
   const secret = req.headers["x-admin-secret"] || req.query.secret;
   if (!secret || secret !== process.env.ADMIN_SECRET) {
-    return res.status(401).json({ error: "Unauthorized access: Invalid secret key" });
+    return res
+      .status(401)
+      .json({ error: "Unauthorized access: Invalid secret key" });
   }
   next();
 };

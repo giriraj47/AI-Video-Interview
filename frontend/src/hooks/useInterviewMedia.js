@@ -13,6 +13,91 @@ export function useInterviewMedia() {
   const streamRef = useRef(null);
   const screenStreamRef = useRef(null);
 
+  const videoRecorderRef = useRef(null);
+  const videoChunksRef = useRef([]);
+
+  const startVideoRecording = (stream) => {
+    if (!stream) return;
+
+    // 🛑 SAFETY GUARD: If a recorder is already open/running, exit immediately!
+    if (
+      videoRecorderRef.current &&
+      videoRecorderRef.current.state !== "inactive"
+    ) {
+      console.warn(
+        "[Media] Video recorder already running. Aborting duplicate spawn.",
+      );
+      return;
+    }
+
+    videoChunksRef.current = [];
+
+    // 🚀 PERFORMANCE FIX: Use lightweight VP8 instead of heavy VP9
+    let options = { mimeType: "video/webm;codecs=vp8,opus" };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      options.mimeType = "video/webm"; // Browser default configuration
+    }
+
+    try {
+      videoRecorderRef.current = new MediaRecorder(stream, options);
+
+      videoRecorderRef.current.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          videoChunksRef.current.push(e.data);
+        }
+      };
+
+      // Increase timeslice to 10 seconds (10000) to fire the thread less frequently
+      videoRecorderRef.current.start(10000);
+      console.log(
+        "[Media] Full session video recording started safely with lightweight codec.",
+      );
+    } catch (error) {
+      console.error("Failed to spin up MediaRecorder:", error);
+    }
+  };
+
+  const stopVideoRecordingAndUpload = async (interviewId) => {
+    return new Promise((resolve, reject) => {
+      if (
+        !videoRecorderRef.current ||
+        videoRecorderRef.current.state === "inactive"
+      ) {
+        return resolve(null);
+      }
+
+      videoRecorderRef.current.onstop = async () => {
+        console.log("[Media] Building final video blob...");
+        const videoBlob = new Blob(videoChunksRef.current, {
+          type: "video/webm",
+        });
+
+        const formData = new FormData();
+        formData.append("video", videoBlob, "interview.webm");
+        formData.append("interviewId", interviewId);
+
+        try {
+          const response = await fetch(
+            "http://localhost:4000/api/upload-recording",
+            {
+              method: "POST",
+              body: formData, // Automatically sets multi-part headers
+            },
+          );
+          const data = await response.json();
+          resolve(data);
+        } catch (err) {
+          console.error("Failed to upload video stream to server:", err);
+          reject(err);
+        }
+      };
+
+      videoRecorderRef.current.stop();
+    });
+  };
+
+  // Make sure to expose these two functions in your hook's return statement!
+
   // Keep refs up-to-date for safe unmount cleanup
   useEffect(() => {
     streamRef.current = webcamStream;
@@ -143,5 +228,7 @@ export function useInterviewMedia() {
     handleToggleMic,
     handleToggleCam,
     handleConfirmExit,
+    startVideoRecording,
+    stopVideoRecordingAndUpload,
   };
 }

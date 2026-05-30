@@ -33,8 +33,8 @@ const interviewSchema = new mongoose.Schema(
       {
         type: { type: String, required: true }, // "TAB_SWITCHED", "WINDOW_DEFOCUSED", "COPY_PASTE", "RIGHT_CLICK", "OUT_OF_FRAME", "MULTIPLE_PEOPLE"
         timestamp: { type: Date, default: Date.now },
-        description: { type: String }
-      }
+        description: { type: String },
+      },
     ],
 
     // Complete AI Evaluation Scorecard
@@ -54,6 +54,7 @@ const interviewSchema = new mongoose.Schema(
       enum: ["Setup", "In Progress", "Completed", "Abandoned"],
       default: "Setup",
     },
+    videoUrl: { type: String, default: null },
   },
   { timestamps: true },
 );
