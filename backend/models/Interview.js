@@ -54,9 +54,6 @@ const interviewSchema = new mongoose.Schema(
       enum: ["Setup", "In Progress", "Completed", "Abandoned"],
       default: "Setup",
     },
-    videoUrl: {
-      type: String,
-    },
   },
   { timestamps: true },
 );

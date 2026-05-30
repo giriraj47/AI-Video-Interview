@@ -38,25 +38,16 @@ export default function InterviewPage() {
     }
   }, [interviewState, countdown]);
 
-  // Trigger interview start and video recording
+  // Trigger interview start
   useEffect(() => {
     if (interviewState === "interview" && candidateInfo?.interviewId) {
       ai.startInterview(candidateInfo.interviewId);
-      media.startVideoRecording(media.webcamStream);
     }
-  }, [interviewState, candidateInfo, media, ai]);
+  }, [interviewState, candidateInfo]);
 
   // Watch for interview completion
   useEffect(() => {
     const saveInterview = async () => {
-      console.log("[InterviewPage] Interview complete, wrapping up...");
-      try {
-        console.log("[InterviewPage] Stopping video recording and uploading...");
-        await media.stopVideoRecordingAndUpload(candidateInfo.interviewId);
-      } catch (uploadError) {
-        console.error("[InterviewPage] Failed to upload video recording:", uploadError);
-      }
-
       try {
         console.log("[InterviewPage] Saving interview...");
         const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
@@ -83,7 +74,7 @@ export default function InterviewPage() {
     if (ai.isInterviewCompleted && interviewState === "interview" && candidateInfo?.interviewId) {
       saveInterview();
     }
-  }, [ai.isInterviewCompleted, interviewState, navigate, candidateInfo, setCandidateInfo, media, ai]);
+  }, [ai.isInterviewCompleted, interviewState, navigate, candidateInfo, setCandidateInfo]);
 
   return (
     <div className="flex-1 flex flex-col justify-center w-full">
