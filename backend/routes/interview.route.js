@@ -58,49 +58,80 @@ router.post("/save-interview", async (req, res) => {
         .json({ error: "Missing required field: interviewId" });
     }
 
-    // Check if session exists in memory. If not, reload history from DB and initialize session.
-    let session = groqService.sessions[interviewId];
-    if (!session) {
-      const interviewDb = await Interview.findById(interviewId);
-      if (!interviewDb) {
-        return res.status(404).json({ error: "Interview record not found" });
-      }
-      console.log(
-        `[API] Reloading session context from database for evaluation: ${interviewId}`,
-      );
-      groqService.initSession(interviewId, interviewDb.transcript);
-      session = groqService.sessions[interviewId];
-    }
-
-    console.log(`[API] Evaluating interview for session ${interviewId}...`);
-    const evaluation = await groqService.evaluateInterview(interviewId);
-
-    console.log(`[API] Finalizing interview document in database...`);
-    const updateFields = {
-      evaluation,
-      status: "Completed",
-    };
-    if (videoUrl) {
-      updateFields.videoUrl = videoUrl;
-    }
-
-    const interview = await Interview.findByIdAndUpdate(
-      interviewId,
-      updateFields,
-      { new: true },
-    );
-
-    // Clean up session in memory
-    groqService.cleanupSession(interviewId);
-
+    // 1. 🚀 INSTANT DISMISSAL: Respond immediately to release frontend thread
     res.status(200).json({
       success: true,
-      message: "Interview saved and evaluated successfully",
-      id: interview._id,
+      message:
+        "Data payload safely acknowledged. Finalization executing in background pipeline.",
+      id: interviewId,
     });
+
+    // 2. 🌀 DECOUPLED ASYNC WORKER: Execute execution tasks down inside a background loop
+    (async () => {
+      try {
+        console.log(
+          `[Background AI Worker] Commencing evaluation sequence for context ID: ${interviewId}`,
+        );
+
+        // Ensure memory context contains loaded session
+        let session = groqService.sessions[interviewId];
+        if (!session) {
+          const interviewDb = await Interview.findById(interviewId);
+          if (!interviewDb) {
+            console.error(
+              `[Background AI Worker Error] Aborting. Document not found for: ${interviewId}`,
+            );
+            return;
+          }
+          console.log(
+            `[Background AI Worker] Hydrating active session structure from historical database logs: ${interviewId}`,
+          );
+          groqService.initSession(interviewId, interviewDb.transcript);
+        }
+
+        console.log(
+          `[Background AI Worker] Querying LLM synthesis for session ${interviewId}...`,
+        );
+        const evaluation = await groqService.evaluateInterview(interviewId);
+
+        console.log(
+          `[Background DB Worker] Committing completed metrics profile to storage layout...`,
+        );
+        const updateFields = {
+          evaluation,
+          status: "Completed",
+        };
+        if (videoUrl) {
+          updateFields.videoUrl = videoUrl;
+        }
+
+        await Interview.findByIdAndUpdate(interviewId, updateFields);
+
+        // Clean up instance profile out of state memory allocation
+        groqService.cleanupSession(interviewId);
+        console.log(
+          `[Background Pipeline] Success. Lifecycle tasks fully completed for session: ${interviewId}`,
+        );
+      } catch (workerError) {
+        console.error(
+          `[Background Pipeline Error] Critical trace inside async processing worker:`,
+          workerError,
+        );
+      }
+    })(); // Self-invoke structural worker block instantly
   } catch (error) {
-    console.error("[API] Error saving interview:", error);
-    res.status(500).json({ error: "Failed to save interview" });
+    console.error(
+      "[API] Error handling initialization trigger for save route:",
+      error,
+    );
+    // Safety check fallback to prevent server app crashes if an error happens before headers clear
+    if (!res.headersSent) {
+      res
+        .status(500)
+        .json({
+          error: "Failed to allocate pipeline execution initialization handler",
+        });
+    }
   }
 });
 

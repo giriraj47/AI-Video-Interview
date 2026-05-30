@@ -1,5 +1,5 @@
-import React from 'react'
-import { Sparkles, LogOut } from 'lucide-react'
+import React from "react";
+import { Sparkles, LogOut } from "lucide-react";
 
 export default function Navbar({ currentTime, onExitClick }) {
   return (
@@ -28,21 +28,16 @@ export default function Navbar({ currentTime, onExitClick }) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-xs font-semibold text-emerald-400 tracking-wide">SECURE LINK</span>
+            {/* <span className="text-xs font-semibold text-emerald-400 tracking-wide">
+              SECURE LINK
+            </span> */}
           </div>
           <span className="h-3 w-px bg-slate-800" />
-          <span className="text-xs text-slate-400 font-mono tracking-tight">{currentTime || '18:14 PM'}</span>
+          <span className="text-xs text-slate-400 font-mono tracking-tight">
+            {currentTime || "18:14 PM"}
+          </span>
         </div>
-
-        {/* Right Side: Exit Button */}
-        <button
-          onClick={onExitClick}
-          className="flex items-center space-x-2 px-4 py-2 rounded-lg border border-red-500/20 hover:border-red-500/60 bg-red-950/10 hover:bg-red-950/30 text-red-400 hover:text-red-300 font-medium text-sm transition-all duration-300 ease-out hover:scale-[1.02] shadow-lg shadow-red-950/10 hover:shadow-red-500/5 cursor-pointer"
-        >
-          <span>Exit</span>
-          <LogOut className="w-4 h-4" />
-        </button>
       </div>
     </header>
-  )
+  );
 }

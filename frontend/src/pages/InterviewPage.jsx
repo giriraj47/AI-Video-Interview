@@ -46,18 +46,18 @@ export default function InterviewPage() {
     }
   }, [interviewState, countdown]);
 
-  // 🔥 FIX 1: Safely trigger recording once when the interview goes live
+  // Safely trigger recording once when the interview goes live
   useEffect(() => {
     if (
       interviewState === "interview" &&
       candidateInfo?.interviewId &&
-      !hasStartedRecording.current // 👈 Check the lock
+      !hasStartedRecording.current
     ) {
       ai.startInterview(candidateInfo.interviewId);
 
       if (media.startVideoRecording) {
         media.startVideoRecording(media.webcamStream);
-        hasStartedRecording.current = true; // 👈 Lock it down immediately
+        hasStartedRecording.current = true;
       }
     }
   }, [interviewState, candidateInfo, media, ai]);
@@ -65,50 +65,66 @@ export default function InterviewPage() {
   // Watch for interview completion
   useEffect(() => {
     const saveInterview = async () => {
-      try {
-        console.log(
-          "[InterviewPage] Halting recorder and processing video asset...",
-        );
-        let finalVideoUrl = null;
+      // 1. Capture contextual values locally before wiping state
+      const targetInterviewId = candidateInfo.interviewId;
 
-        // 🔥 FIX 2: Await the FFmpeg processing and Cloudinary upload response
-        if (media.stopVideoRecordingAndUpload) {
-          const uploadResult = await media.stopVideoRecordingAndUpload(
-            candidateInfo.interviewId,
-          );
-          finalVideoUrl = uploadResult?.videoUrl;
+      console.log(
+        "[InterviewPage] Interview concluded. Dispatching background upload thread...",
+      );
+
+      // 2. Define our non-blocking background worker
+      const executeBackgroundPipeline = async () => {
+        try {
+          let finalVideoUrl = null;
+
+          // Stop recording and process asset upload to backend/Cloudinary
+          if (media.stopVideoRecordingAndUpload) {
+            const uploadResult =
+              await media.stopVideoRecordingAndUpload(targetInterviewId);
+            finalVideoUrl = uploadResult?.videoUrl;
+            console.log(
+              "[Background Process] Cloudinary CDN asset ready:",
+              finalVideoUrl,
+            );
+          }
+
           console.log(
-            "[InterviewPage] Cloudinary CDN deployment ready:",
-            finalVideoUrl,
+            "[Background Process] Shipping metadata payload payload...",
           );
-        }
+          const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              interviewId: targetInterviewId,
+              videoUrl: finalVideoUrl,
+            }),
+          });
 
-        console.log(
-          "[InterviewPage] Dispatched transcript logs saving payload...",
-        );
-        const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            interviewId: candidateInfo.interviewId,
-            videoUrl: finalVideoUrl, // 👈 Send the generated Cloudinary video link to MongoDB!
-          }),
-        });
-
-        if (!response.ok) {
+          if (!response.ok) {
+            console.error(
+              "Background metadata save execution failed:",
+              await response.text(),
+            );
+          } else {
+            console.log(
+              "[Background Process] Video tracking successfully written to MongoDB.",
+            );
+          }
+        } catch (error) {
           console.error(
-            "Failed to save interview metadata",
-            await response.text(),
+            "Exception handled inside background execution worker:",
+            error,
           );
         }
-      } catch (error) {
-        console.error(
-          "Critical error inside compilation save pipeline:",
-          error,
-        );
-      }
+      };
 
-      console.log("[InterviewPage] Interview clean, navigating to /result");
+      // 3. 🔥 FIRE AND FORGET: Trigger worker WITHOUT an 'await' operator
+      executeBackgroundPipeline();
+
+      // 4. 🚀 INSTANT ROUTING: Free the interface instantly
+      console.log(
+        "[InterviewPage] Routing candidate to results interface instantly.",
+      );
       ai.resetSpeech();
       media.handleConfirmExit();
       setCandidateInfo(null);
