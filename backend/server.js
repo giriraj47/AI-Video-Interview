@@ -9,8 +9,8 @@ import uploadRoute from "./routes/upload.route.js";
 import interviewRoute from "./routes/interview.route.js";
 import adminRoute from "./routes/admin.route.js";
 import { serve } from "inngest/express";
-import { inngest } from "./src/inngest/client.js";
-import { processInterviewFinalization } from "./src/src/inngest/functions.js";
+import { inngest } from "./inngest/client.js";
+import { processInterviewFinalization } from "./inngest/functions.js";
 
 const app = express();
 app.use(cors());

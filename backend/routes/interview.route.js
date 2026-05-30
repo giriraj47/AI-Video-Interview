@@ -1,6 +1,7 @@
 import express from "express";
 import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
+import { inngest } from "../inngest/client.js";
 
 const router = express.Router();
 
