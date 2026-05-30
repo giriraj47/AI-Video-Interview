@@ -37,40 +37,85 @@ io.on("connection", (socket) => {
   });
 });
 
-// Save Interview Route
-app.post("/api/save-interview", async (req, res) => {
+// Start/Resume Interview Route
+app.post("/api/start-interview", async (req, res) => {
   try {
-    const { socketId, candidateInfo } = req.body;
+    const { email, phoneNumber } = req.body;
 
-    if (!socketId || !candidateInfo) {
-      return res.status(400).json({ error: "Missing required fields" });
+    if (!email || !phoneNumber) {
+      return res.status(400).json({ error: "Missing email or phone number" });
     }
 
-    const session = groqService.sessions[socketId];
-    if (!session) {
-      return res.status(404).json({ error: "Interview session not found" });
-    }
-
-    console.log(`[API] Evaluating interview for socket ${socketId}...`);
-    const evaluation = await groqService.evaluateInterview(socketId);
-
-    console.log(`[API] Saving interview to database...`);
-    const interview = new Interview({
-      candidateEmail: candidateInfo.email,
-      phoneNumber: candidateInfo.phoneNumber,
-      transcript: session.history,
-      evaluation,
-      status: "Completed",
+    // Check if an "In Progress" session already exists for this candidate
+    let interview = await Interview.findOne({
+      candidateEmail: email.toLowerCase(),
+      status: "In Progress"
     });
 
-    await interview.save();
-
-    // Clean up session
-    groqService.cleanupSession(socketId);
+    if (interview) {
+      console.log(`[API] Active interview session found for ${email}. Resuming: ${interview._id}`);
+    } else {
+      interview = new Interview({
+        candidateEmail: email,
+        phoneNumber,
+        status: "In Progress",
+        transcript: []
+      });
+      await interview.save();
+      console.log(`[API] Created new interview session for ${email}: ${interview._id}`);
+    }
 
     res.status(200).json({
       success: true,
-      message: "Interview saved successfully",
+      id: interview._id,
+      transcript: interview.transcript
+    });
+  } catch (error) {
+    console.error("[API] Error initializing interview:", error);
+    res.status(500).json({ error: "Failed to initialize interview" });
+  }
+});
+
+// Save/Finalize Interview Route
+app.post("/api/save-interview", async (req, res) => {
+  try {
+    const { interviewId } = req.body;
+
+    if (!interviewId) {
+      return res.status(400).json({ error: "Missing required field: interviewId" });
+    }
+
+    // Check if session exists in memory. If not, reload history from DB and initialize session.
+    let session = groqService.sessions[interviewId];
+    if (!session) {
+      const interviewDb = await Interview.findById(interviewId);
+      if (!interviewDb) {
+        return res.status(404).json({ error: "Interview record not found" });
+      }
+      console.log(`[API] Reloading session context from database for evaluation: ${interviewId}`);
+      groqService.initSession(interviewId, interviewDb.transcript);
+      session = groqService.sessions[interviewId];
+    }
+
+    console.log(`[API] Evaluating interview for session ${interviewId}...`);
+    const evaluation = await groqService.evaluateInterview(interviewId);
+
+    console.log(`[API] Finalizing interview document in database...`);
+    const interview = await Interview.findByIdAndUpdate(
+      interviewId,
+      {
+        evaluation,
+        status: "Completed",
+      },
+      { new: true }
+    );
+
+    // Clean up session in memory
+    groqService.cleanupSession(interviewId);
+
+    res.status(200).json({
+      success: true,
+      message: "Interview saved and evaluated successfully",
       id: interview._id,
     });
   } catch (error) {

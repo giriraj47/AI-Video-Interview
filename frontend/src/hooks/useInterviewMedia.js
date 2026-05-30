@@ -61,16 +61,16 @@ export function useInterviewMedia() {
         audio: true,
       });
 
+      const screen = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+      });
+      setScreenStream(screen);
+
       setWebcamStream(webcam);
       setIsMicOn(true);
       setIsCamOn(true);
       setStatus("ready");
       startMediaRecording(webcam);
-
-      const screen = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-      });
-      setScreenStream(screen);
     } catch (error) {
       console.error("Error during media setup:", error);
       setStatus("error");
@@ -97,6 +97,16 @@ export function useInterviewMedia() {
   };
 
   const handleConfirmExit = () => {
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.error("Error stopping media recorder on exit:", err);
+      }
+    }
     if (streamRef.current)
       streamRef.current.getTracks().forEach((t) => t.stop());
     if (screenStreamRef.current)

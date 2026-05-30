@@ -4,10 +4,11 @@ import io from "socket.io-client";
 export function useAISpeech(webcamStream) {
   const [currentQuestion, setCurrentQuestion] = useState("");
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [totalQuestions] = useState(10);
+  const [totalQuestions, setTotalQuestions] = useState(3);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isInterviewCompleted, setIsInterviewCompleted] = useState(false);
+  const [isDisconnected, setIsDisconnected] = useState(!navigator.onLine);
 
   const socketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -22,6 +23,12 @@ export function useAISpeech(webcamStream) {
 
   const webcamStreamRef = useRef(webcamStream);
   const startListeningRef = useRef(null);
+  const interviewIdRef = useRef(null);
+  const isInterviewCompletedRef = useRef(false);
+
+  useEffect(() => {
+    isInterviewCompletedRef.current = isInterviewCompleted;
+  }, [isInterviewCompleted]);
 
   const stopListeningAndSend = useCallback(() => {
     console.log("[Frontend] stopListeningAndSend() triggered.");
@@ -42,6 +49,12 @@ export function useAISpeech(webcamStream) {
   }, []);
 
   const startListening = useCallback(() => {
+    if (isDisconnected) {
+      console.warn(
+        "[useAISpeech] Cannot start listening: socket is disconnected.",
+      );
+      return;
+    }
     const stream = webcamStreamRef.current;
     if (!stream) {
       console.warn("[Frontend] No active webcam stream stream found.");
@@ -91,11 +104,16 @@ export function useAISpeech(webcamStream) {
               "[Frontend] Emitting 'submit_audio' transmission block to backend.",
             );
 
-            socketRef.current.emit("submit_audio", {
-              audioBuffer: base64Audio,
-              mimetype: mediaRecorderRef.current.mimeType,
-            });
-            setCurrentQuestionIndex((prev) => prev + 1);
+            if (socketRef.current && socketRef.current.connected) {
+              socketRef.current.emit("submit_audio", {
+                audioBuffer: base64Audio,
+                mimetype: mediaRecorderRef.current.mimeType,
+              });
+            } else {
+              console.warn(
+                "[useAISpeech] Socket disconnected. Discarding audio chunk.",
+              );
+            }
           };
         };
 
@@ -110,22 +128,20 @@ export function useAISpeech(webcamStream) {
       if (!audioContextRef.current) {
         const AudioContextClass =
           window.AudioContext || window.webkitAudioContext;
-        const audioContext = new AudioContextClass();
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256; // Light footprint for fast execution
+        audioContextRef.current = new AudioContextClass();
+      }
+      if (audioContextRef.current.state === "suspended") {
+        audioContextRef.current.resume();
+      }
+      if (!analyserRef.current) {
+        analyserRef.current = audioContextRef.current.createAnalyser();
+        analyserRef.current.fftSize = 256;
 
         const audioTracks = stream.getAudioTracks();
         const audioOnlyStream = new MediaStream(audioTracks);
-        const source = audioContext.createMediaStreamSource(audioOnlyStream);
-
-        source.connect(analyser);
-        audioContextRef.current = audioContext;
-        analyserRef.current = analyser;
-      }
-
-      // Resume context if browser flagged it as suspended due to autoplay policy
-      if (audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume();
+        const source =
+          audioContextRef.current.createMediaStreamSource(audioOnlyStream);
+        source.connect(analyserRef.current);
       }
 
       const bufferLength = analyserRef.current.frequencyBinCount;
@@ -166,7 +182,7 @@ export function useAISpeech(webcamStream) {
     } catch (e) {
       console.error("[Frontend] Failed to mount Decibel VAD Analyser Node:", e);
     }
-  }, [stopListeningAndSend]);
+  }, [stopListeningAndSend, isDisconnected]);
 
   useEffect(() => {
     webcamStreamRef.current = webcamStream;
@@ -179,9 +195,53 @@ export function useAISpeech(webcamStream) {
   useEffect(() => {
     socketRef.current = io("http://localhost:4000");
 
+    socketRef.current.on("connect", () => {
+      console.log("[Socket] Connected to backend.");
+      setIsDisconnected(false);
+
+      // If we were mid-interview and reconnected, re-register the interview session!
+      if (interviewIdRef.current && !isInterviewCompletedRef.current) {
+        console.log(
+          `[Socket] Re-registering active session: ${interviewIdRef.current}`,
+        );
+        socketRef.current.emit("start_interview", {
+          interviewId: interviewIdRef.current,
+        });
+      }
+    });
+
+    socketRef.current.on("disconnect", (reason) => {
+      console.warn("[Socket] Disconnected from backend:", reason);
+      setIsDisconnected(true);
+    });
+
+    socketRef.current.on("connect_error", (error) => {
+      console.error("[Socket] Connection error:", error);
+      setIsDisconnected(true);
+    });
+
     socketRef.current.on("ai_response", (data) => {
+      if (vadIntervalRef.current) {
+        clearInterval(vadIntervalRef.current);
+        vadIntervalRef.current = null;
+      }
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        mediaRecorderRef.current.stop();
+      }
+
       setIsAISpeaking(true);
       setCurrentQuestion(data.text);
+      setIsAISpeaking(true);
+      setCurrentQuestion(data.text);
+      if (typeof data.currentQuestionIndex === "number") {
+        setCurrentQuestionIndex(data.currentQuestionIndex);
+      }
+      if (typeof data.totalQuestions === "number") {
+        setTotalQuestions(data.totalQuestions);
+      }
 
       if (data.audioBuffer) {
         try {
@@ -223,7 +283,38 @@ export function useAISpeech(webcamStream) {
       if (startListeningRef.current) startListeningRef.current();
     });
 
+    const handleOffline = () => {
+      console.warn("[Network] Browser went offline.");
+      setIsDisconnected(true);
+    };
+
+    const handleOnline = () => {
+      console.log(
+        "[Network] Browser came back online. Checking socket state...",
+      );
+
+      if (socketRef.current) {
+        if (socketRef.current.connected) {
+          // 🟢 The socket survived the brief network drop!
+          // Manually clear the UI warning since the 'connect' event won't fire.
+          console.log("[Network] Socket survived the drop. Resuming UI.");
+          setIsDisconnected(false);
+        } else {
+          // 🔴 The socket actually died. Force a raw reconnection.
+          console.log("[Network] Socket died. Forcing reconnect...");
+          socketRef.current.connect();
+        }
+      } else {
+        setIsDisconnected(false);
+      }
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+
     return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
       if (socketRef.current) socketRef.current.disconnect();
       if (audioPlaybackRef.current) audioPlaybackRef.current.pause();
       if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
@@ -231,13 +322,104 @@ export function useAISpeech(webcamStream) {
     };
   }, []);
 
-  const startInterview = useCallback(() => {
+  // VAD Suspension / Resumption Effect based on Connection Status
+  useEffect(() => {
+    if (isDisconnected) {
+      console.log(
+        "[useAISpeech] Socket disconnected mid-interview. Pausing VAD loop and media recording.",
+      );
+      if (vadIntervalRef.current) {
+        clearInterval(vadIntervalRef.current);
+        vadIntervalRef.current = null;
+      }
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state !== "inactive"
+      ) {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch (e) {
+          console.error(
+            "[useAISpeech] Error stopping media recorder on disconnect:",
+            e,
+          );
+        }
+      }
+      setIsUserSpeaking(false);
+    } else {
+      // Reconnected!
+      if (
+        !isAISpeaking &&
+        !isInterviewCompleted &&
+        currentQuestion &&
+        currentQuestion !== "Initializing Interview..."
+      ) {
+        console.log(
+          "[useAISpeech] Socket reconnected. Resuming VAD and recording.",
+        );
+        startListening();
+      }
+    }
+  }, [
+    isDisconnected,
+    isAISpeaking,
+    isInterviewCompleted,
+    currentQuestion,
+    startListening,
+  ]);
+
+  const startInterview = useCallback((interviewId) => {
+    interviewIdRef.current = interviewId;
     setCurrentQuestionIndex(0);
     setCurrentQuestion("Initializing Interview...");
     setIsInterviewCompleted(false);
-    if (socketRef.current) {
-      socketRef.current.emit("start_interview");
+
+    if (!audioContextRef.current) {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
     }
+    if (audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume();
+    }
+
+    if (socketRef.current) {
+      socketRef.current.emit("start_interview", { interviewId });
+    }
+  }, []);
+
+  const reportViolation = useCallback((type, desc) => {
+    if (socketRef.current && socketRef.current.connected) {
+      console.log(`[useAISpeech] Reporting violation: ${type} - ${desc}`);
+      socketRef.current.emit("proctor_flag", { type, description: desc });
+    }
+  }, []);
+
+  const resetSpeech = useCallback(() => {
+    if (audioPlaybackRef.current) {
+      try {
+        audioPlaybackRef.current.pause();
+        audioPlaybackRef.current.src = "";
+      } catch (e) {
+        console.error("Error pausing audio playback:", e);
+      }
+    }
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current);
+      vadIntervalRef.current = null;
+    }
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.error("Error stopping media recorder in resetSpeech:", e);
+      }
+    }
+    setIsAISpeaking(false);
+    setIsUserSpeaking(false);
   }, []);
 
   return {
@@ -249,6 +431,11 @@ export function useAISpeech(webcamStream) {
     isInterviewCompleted,
     startInterview,
     nextQuestion: stopListeningAndSend,
-    get socketId() { return socketRef.current?.id; }
+    reportViolation,
+    resetSpeech,
+    isDisconnected,
+    get socketId() {
+      return socketRef.current?.id;
+    },
   };
 }

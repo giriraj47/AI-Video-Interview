@@ -7,18 +7,16 @@ class GroqService {
 
       timeout: 45000,
     });
-    this.sessions = {}; // Maps socketId to conversation history
+    this.sessions = {}; // Maps interviewId to conversation history
+    this.maxQuestions = 3;
   }
 
-  // Initialize a new interview session
-  initSession(socketId) {
-    this.sessions[socketId] = {
-      questionCount: 0,
-      history: [
-        {
-          role: "system",
-          content: `You are an expert AI Technical Recruiter. You are interviewing a candidate for a Full Stack Developer position. 
-You must ask exactly 1 questions total.
+  // Initialize a new interview session or reload an existing one
+  initSession(interviewId, existingTranscript = null) {
+    const systemPrompt = {
+      role: "system",
+      content: `You are an expert AI Technical Recruiter. You are interviewing a candidate for a Full Stack Developer position. 
+You must ask exactly ${this.maxQuestions} questions total.
 Always respond with a valid JSON object matching this schema:
 {
   "spoken_response": "The text you will say to the candidate",
@@ -29,24 +27,57 @@ Keep your questions professional, concise, and conversational. Do not output any
 Your first task is to greet the candidate and ask the first technical question.
 But right now its just in testing phase to ask really simple question like what is react no followups.
 `,
-        },
-      ],
     };
+
+    if (existingTranscript && existingTranscript.length > 0) {
+      // Reconstruct the history from the database transcript.
+      // Strip any previous system messages from the transcript first to avoid duplicates,
+      // and map to clean { role, content } objects.
+      const conversation = existingTranscript
+        .filter(msg => msg.role !== "system")
+        .map(msg => ({ role: msg.role, content: msg.content }));
+
+      // Count the actual questions asked by checking for non-followup assistant responses
+      let questionCount = 0;
+      conversation.forEach(msg => {
+        if (msg.role === "assistant") {
+          try {
+            const parsed = JSON.parse(msg.content);
+            if (!parsed.is_follow_up && !parsed.is_interview_complete) {
+              questionCount++;
+            }
+          } catch (e) {
+            questionCount++;
+          }
+        }
+      });
+
+      this.sessions[interviewId] = {
+        questionCount,
+        history: [systemPrompt, ...conversation]
+      };
+      console.log(`[GroqService] Re-initialized session ${interviewId} with ${questionCount} questions already asked.`);
+    } else {
+      this.sessions[interviewId] = {
+        questionCount: 0,
+        history: [systemPrompt]
+      };
+      console.log(`[GroqService] Initialized new session for ${interviewId}`);
+    }
   }
 
-  async generateNextResponse(socketId, candidateText = null) {
-    const session = this.sessions[socketId];
+  async generateNextResponse(interviewId, candidateText = null) {
+    const session = this.sessions[interviewId];
     if (!session) throw new Error("Session not initialized");
 
     if (candidateText) {
       session.history.push({ role: "user", content: candidateText });
     }
 
-    if (session.questionCount >= 10 && candidateText) {
+    if (session.questionCount >= this.maxQuestions && candidateText) {
       session.history.push({
         role: "system",
-        content:
-          "The candidate has answered 10 questions. The interview is now complete. Set 'is_interview_complete' to true, and output a closing thank-you message in 'spoken_response'.",
+        content: `The candidate has answered ${this.maxQuestions} questions. The interview is now complete. Set 'is_interview_complete' to true, and output a closing thank-you message in 'spoken_response'.`,
       });
     }
 
@@ -85,12 +116,12 @@ But right now its just in testing phase to ask really simple question like what 
     }
   }
 
-  cleanupSession(socketId) {
-    delete this.sessions[socketId];
+  cleanupSession(interviewId) {
+    delete this.sessions[interviewId];
   }
 
-  async evaluateInterview(socketId) {
-    const session = this.sessions[socketId];
+  async evaluateInterview(interviewId) {
+    const session = this.sessions[interviewId];
     if (!session) throw new Error("Session not found");
 
     const prompt = `You are an expert AI Technical Recruiter. Please evaluate the following interview transcript and provide a final evaluation scorecard.

@@ -24,16 +24,16 @@ export default function TranscriptionPanel({ currentQuestion }) {
         </div>
       </div>
 
-      {/* Main Body Text Container */}
-      <div className="relative rounded-xl bg-slate-950/60 border border-slate-800/60 p-4 min-h-[90px] flex items-start space-x-4">
+      {/* Main Body Text Container with fixed height to prevent layout shifts */}
+      <div className="relative rounded-xl bg-slate-950/60 border border-slate-800/60 p-4 h-36 flex items-start space-x-4 overflow-hidden">
         {/* AI Avatar circle graphic next to speech to indicate source */}
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-950 to-slate-900 border border-cyan-800/40 flex items-center justify-center">
           <Sparkles className="w-4 h-4 text-cyan-400" />
         </div>
         
-        <div className="flex-1 space-y-2">
-          <span className="text-[10px] font-bold text-cyan-400 font-mono tracking-widest uppercase block">AI RECRUITER</span>
-          <p className="text-slate-200 text-sm sm:text-base leading-relaxed tracking-wide font-medium custom-scrollbar max-h-36 overflow-y-auto">
+        <div className="flex-1 flex flex-col h-full overflow-hidden space-y-1">
+          <span className="text-[10px] font-bold text-cyan-400 font-mono tracking-widest uppercase block flex-shrink-0">AI RECRUITER</span>
+          <p className="text-slate-200 text-sm sm:text-base leading-relaxed tracking-wide font-medium custom-scrollbar overflow-y-auto flex-1 pr-1">
             {currentQuestion ? `"${currentQuestion}"` : "Waiting for AI..."}
           </p>
         </div>

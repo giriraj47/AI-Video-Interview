@@ -29,6 +29,14 @@ const interviewSchema = new mongoose.Schema(
       },
     ],
 
+    flags: [
+      {
+        type: { type: String, required: true }, // "TAB_SWITCHED", "WINDOW_DEFOCUSED", "COPY_PASTE", "RIGHT_CLICK", "OUT_OF_FRAME", "MULTIPLE_PEOPLE"
+        timestamp: { type: Date, default: Date.now },
+        description: { type: String }
+      }
+    ],
+
     // Complete AI Evaluation Scorecard
     evaluation: {
       overallScore: { type: Number, min: 0, max: 10 },

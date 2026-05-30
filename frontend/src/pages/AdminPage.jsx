@@ -521,6 +521,54 @@ export default function AdminPage() {
                   </div>
                 </div>
 
+                {/* Proctoring Flags Section */}
+                <div className="glass-panel p-6 border-slate-900 rounded-3xl space-y-4">
+                  <h3 className="text-sm font-bold font-mono tracking-widest text-slate-400 uppercase flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-rose-500">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                    </svg>
+                    Proctoring & Integrity Flags
+                  </h3>
+
+                  {(!selectedInterview.flags || selectedInterview.flags.length === 0) ? (
+                    <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/25 text-emerald-400 text-xs animate-fade-in">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5 flex-shrink-0">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                      </svg>
+                      <div>
+                        <span className="font-bold">Clear Integrity Record:</span> No suspicious candidate activity, tab switching, copy-pasting, or video framing violations were logged for this session.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-2xl bg-rose-950/20 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center gap-2">
+                        <span className="bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 rounded text-xxs font-mono">
+                          {selectedInterview.flags.length} VIOLATIONS
+                        </span>
+                        <span>Potential academic integrity warnings recorded.</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                        {selectedInterview.flags.map((flag, idx) => (
+                          <div key={idx} className="p-4 rounded-2xl bg-slate-900/60 border border-slate-900 flex flex-col gap-1.5 hover:border-slate-800 transition-colors">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xxs font-extrabold text-rose-400 font-mono uppercase tracking-wider">
+                                {flag.type}
+                              </span>
+                              <span className="text-3xxs text-slate-500 font-mono">
+                                {formatDateTime(flag.timestamp)}
+                              </span>
+                            </div>
+                            <p className="text-slate-300 text-xs leading-relaxed font-light">
+                              {flag.description}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Detailed Dialog timeline */}
                 <div className="glass-panel p-6 border-slate-900 rounded-3xl space-y-6">
                   <div className="border-b border-slate-900 pb-4 flex justify-between items-center">

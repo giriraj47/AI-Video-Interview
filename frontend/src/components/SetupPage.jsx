@@ -7,9 +7,10 @@ export default function SetupPage() {
   const { videoRef, media, proctor, setCandidateInfo } = useInterview();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("example@mail.com");
-  const [phoneNumber, setPhoneNumber] = useState("1234567890");
+  const [email, setEmail] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [formErrors, setFormErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateForm = () => {
     const errors = {};
@@ -31,16 +32,44 @@ export default function SetupPage() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     if (validateForm() && media.status === "ready") {
-      const candidateData = { email, phoneNumber };
-      console.log(
-        "[SetupPage] Candidate Info ready for backend/database:",
-        candidateData,
-      );
-      setCandidateInfo(candidateData);
-      navigate("/interview");
+      setIsSubmitting(true);
+      try {
+        const response = await fetch(
+          "http://localhost:4000/api/start-interview",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, phoneNumber }),
+          },
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const candidateData = { email, phoneNumber, interviewId: data.id };
+          console.log(
+            "[SetupPage] Candidate session initialized successfully:",
+            candidateData,
+          );
+          setCandidateInfo(candidateData);
+          navigate("/interview");
+        } else {
+          const errData = await response.json();
+          setFormErrors({
+            form: errData.error || "Failed to initialize interview session.",
+          });
+        }
+      } catch (err) {
+        console.error("Error starting interview session:", err);
+        setFormErrors({
+          form: "Error connecting to server. Please try again.",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -102,20 +131,29 @@ export default function SetupPage() {
               </p>
             )}
           </div>
+          {formErrors.form && (
+            <p className="text-red-400 text-xs text-center font-medium mt-1">
+              {formErrors.form}
+            </p>
+          )}
         </form>
 
         <button
           onClick={handleSubmit}
-          disabled={media.status !== "ready" || !email || !phoneNumber}
+          disabled={
+            media.status !== "ready" || !email || !phoneNumber || isSubmitting
+          }
           className={`w-full py-4 rounded-xl font-bold text-base tracking-wider uppercase transition-all duration-300 shadow-lg ${
-            media.status === "ready" && email && phoneNumber
+            media.status === "ready" && email && phoneNumber && !isSubmitting
               ? "bg-gradient-to-r from-cyan-500 to-blue-600 hover:scale-[1.02] text-white cursor-pointer shadow-cyan-500/25 active:scale-[0.98]"
               : "bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed shadow-none"
           }`}
         >
-          {media.status !== "ready"
-            ? "Configure Devices First"
-            : "Start Interview"}
+          {isSubmitting
+            ? "Initializing Session..."
+            : media.status !== "ready"
+              ? "Configure Devices First"
+              : "Start Interview"}
         </button>
       </div>
 

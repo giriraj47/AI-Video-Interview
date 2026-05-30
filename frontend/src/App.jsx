@@ -8,13 +8,14 @@ import ResultsPage from "./components/ResultsPage";
 import AdminPage from "./pages/AdminPage";
 
 function App() {
+  const hasCandidate = !!localStorage.getItem("candidateInfo");
   return (
     <InterviewProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
             {/* Redirect / to /setup initially */}
-            <Route index element={<Navigate to="/setup" replace />} />
+            <Route index element={<Navigate to={hasCandidate ? "/interview" : "/setup"} replace />} />
             <Route path="setup" element={<SetupPage />} />
             <Route path="interview" element={<InterviewPage />} />
             <Route path="result" element={<ResultsPage />} />
