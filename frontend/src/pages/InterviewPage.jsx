@@ -66,7 +66,14 @@ export default function InterviewPage() {
   useEffect(() => {
     const saveInterview = async () => {
       // 1. Capture contextual values locally before wiping state
-      const targetInterviewId = candidateInfo.interviewId;
+      const targetInterviewId = candidateInfo?.interviewId;
+
+      if (!targetInterviewId) {
+        console.error(
+          "[Frontend] Cannot finalize. targetInterviewId is missing!",
+        );
+        return;
+      }
 
       console.log(
         "[InterviewPage] Interview concluded. Dispatching background upload thread...",
