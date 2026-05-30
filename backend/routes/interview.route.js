@@ -58,6 +58,14 @@ router.post("/save-interview", async (req, res) => {
         .json({ error: "Missing required field: interviewId" });
     }
 
+    await inngest.send({
+      name: "interview/finalized",
+      data: {
+        interviewId,
+        videoUrl,
+      },
+    });
+
     // 1. 🚀 INSTANT DISMISSAL: Respond immediately to release frontend thread
     res.status(200).json({
       success: true,
@@ -126,11 +134,9 @@ router.post("/save-interview", async (req, res) => {
     );
     // Safety check fallback to prevent server app crashes if an error happens before headers clear
     if (!res.headersSent) {
-      res
-        .status(500)
-        .json({
-          error: "Failed to allocate pipeline execution initialization handler",
-        });
+      res.status(500).json({
+        error: "Failed to allocate pipeline execution initialization handler",
+      });
     }
   }
 });
