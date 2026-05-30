@@ -17,9 +17,15 @@ export function useSocket(interviewIdRef, isInterviewCompletedRef) {
   // Allow consumers to register event handlers that survive re-renders
   const handlersRef = useRef({});
 
-  /** Register a socket event handler (call before the socket connects). */
+  /** Register a socket event handler. Safe to call before or after socket connects. */
   const onSocketEvent = useCallback((event, handler) => {
     handlersRef.current[event] = handler;
+    // If the socket is already live, attach immediately to avoid the race
+    // where useSocket's effect runs before the consumer registers handlers.
+    if (socketRef.current) {
+      socketRef.current.off(event); // prevent duplicate listeners
+      socketRef.current.on(event, handler);
+    }
   }, []);
 
   useEffect(() => {
