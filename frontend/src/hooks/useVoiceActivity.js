@@ -46,6 +46,14 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
         "[Frontend] AI turn complete. Listening to candidate track...",
       );
 
+      // Extract audio tracks once — shared by MediaRecorder and VAD analyser
+      const audioTracks = stream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        console.error("[Frontend] Zero audio tracks available in stream!");
+        return;
+      }
+      const audioOnlyStream = new MediaStream(audioTracks);
+
       // 1. Initialize audio-only MediaRecorder
       if (
         !mediaRecorderRef.current ||
@@ -53,14 +61,6 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
       ) {
         audioChunksRef.current = [];
         try {
-          const audioTracks = stream.getAudioTracks();
-          if (audioTracks.length === 0) {
-            console.error(
-              "[Frontend] Zero audio tracks available in stream!",
-            );
-            return;
-          }
-          const audioOnlyStream = new MediaStream(audioTracks);
 
           const options = MediaRecorder.isTypeSupported(
             "audio/webm;codecs=opus",
@@ -77,7 +77,7 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
             if (event.data.size > 0) audioChunksRef.current.push(event.data);
           };
 
-          mediaRecorderRef.current.onstop = () => {
+          mediaRecorderRef.current.onstop = async () => {
             console.log(
               `[Frontend] Processing ${audioChunksRef.current.length} collected chunks...`,
             );
@@ -87,25 +87,22 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
               type: mediaRecorderRef.current.mimeType,
             });
 
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            reader.onloadend = () => {
-              const base64Audio = reader.result.split(",")[1];
-              console.log(
-                "[Frontend] Emitting 'submit_audio' transmission block to backend.",
-              );
+            // Send raw binary via Socket.io (no base64 inflation)
+            const rawBuffer = await audioBlob.arrayBuffer();
+            console.log(
+              "[Frontend] Emitting 'submit_audio' binary transmission to backend.",
+            );
 
-              if (socketRef.current && socketRef.current.connected) {
-                socketRef.current.emit("submit_audio", {
-                  audioBuffer: base64Audio,
-                  mimetype: mediaRecorderRef.current.mimeType,
-                });
-              } else {
-                console.warn(
-                  "[useAISpeech] Socket disconnected. Discarding audio chunk.",
-                );
-              }
-            };
+            if (socketRef.current && socketRef.current.connected) {
+              socketRef.current.emit("submit_audio", {
+                audioBuffer: rawBuffer,
+                mimetype: mediaRecorderRef.current.mimeType,
+              });
+            } else {
+              console.warn(
+                "[useAISpeech] Socket disconnected. Discarding audio chunk.",
+              );
+            }
           };
 
           mediaRecorderRef.current.start(1000);
@@ -115,21 +112,15 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
       }
 
       // 2. Hardware-Safe Decibel VAD Tracker
+      // AudioContext is created once in useAISpeech.startInterview (on user gesture)
       try {
-        if (!audioContextRef.current) {
-          const AudioContextClass =
-            window.AudioContext || window.webkitAudioContext;
-          audioContextRef.current = new AudioContextClass();
-        }
-        if (audioContextRef.current.state === "suspended") {
+        if (audioContextRef.current?.state === "suspended") {
           audioContextRef.current.resume();
         }
-        if (!analyserRef.current) {
+        if (!analyserRef.current && audioContextRef.current) {
           analyserRef.current = audioContextRef.current.createAnalyser();
           analyserRef.current.fftSize = 256;
 
-          const audioTracks = stream.getAudioTracks();
-          const audioOnlyStream = new MediaStream(audioTracks);
           const source =
             audioContextRef.current.createMediaStreamSource(audioOnlyStream);
           source.connect(analyserRef.current);
@@ -196,10 +187,20 @@ export function useVoiceActivity(socketRef, setIsUserSpeaking) {
     setIsUserSpeaking(false);
   }, [setIsUserSpeaking]);
 
+  // ── Close AudioContext and release all audio nodes (final cleanup) ──
+  const destroyAudioContext = useCallback(() => {
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+  }, []);
+
   return {
     startListening,
     stopListeningAndSend,
     cleanupVAD,
+    destroyAudioContext,
     audioContextRef,
   };
 }

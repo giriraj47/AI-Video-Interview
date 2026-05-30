@@ -1,7 +1,12 @@
 import React from "react";
 import { Sparkles, Volume2 } from "lucide-react";
 
-export default function AIInterviewer({ isAISpeaking, onToggleSpeech }) {
+export default function AIInterviewer({
+  isAISpeaking,
+  currentQuestion,
+  currentQuestionIndex = 0,
+  totalQuestions = 3,
+}) {
   return (
     <div
       className={`relative rounded-2xl glass-panel p-6 flex flex-col items-center justify-center min-h-[360px] sm:min-h-[420px] transition-all duration-300 ease-in-out ${isAISpeaking ? "speaking-glow" : "border-slate-800"}`}
@@ -27,7 +32,7 @@ export default function AIInterviewer({ isAISpeaking, onToggleSpeech }) {
             <div className="absolute inset-0 flex items-center justify-center bg-cyan-950/20 backdrop-blur-[1px]">
               <div className="flex items-end space-x-1.5 h-10">
                 <div className="w-1.5 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-1" />
-                <div className="w-1.5 bg-gradient -to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-2" />
+                <div className="w-1.5 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-2" />
                 <div className="w-1.5 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-3" />
                 <div className="w-1.5 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-4" />
                 <div className="w-1.5 bg-gradient-to-t from-cyan-600 to-cyan-400 rounded-full wave-bar-5" />
@@ -47,17 +52,16 @@ export default function AIInterviewer({ isAISpeaking, onToggleSpeech }) {
         </div>
       </div>
 
-      {/* AI Voice Activity Trigger for testing interactivity */}
+      {/* Voice status indicator (read-only) */}
       <div className="mt-6 flex flex-col items-center">
-        <button
-          onClick={onToggleSpeech}
-          className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full border text-xs font-mono tracking-wider transition-all duration-300 cursor-pointer ${isAISpeaking ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400 shadow-sm shadow-cyan-950/30" : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"}`}
+        <div
+          className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full border text-xs font-mono tracking-wider transition-all duration-300 ${isAISpeaking ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400 shadow-sm shadow-cyan-950/30" : "bg-slate-900 border-slate-800 text-slate-400"}`}
         >
           <span>Voice Status:</span>
           <span className="font-bold uppercase tracking-widest">
-            {isAISpeaking ? "Speaking" : "Muted"}
+            {isAISpeaking ? "Speaking" : "Listening"}
           </span>
-        </button>
+        </div>
       </div>
 
       {/* Bottom-Left Tag: Interviewer */}
@@ -70,10 +74,10 @@ export default function AIInterviewer({ isAISpeaking, onToggleSpeech }) {
         </span>
       </div>
 
-      {/* Top-Right Voice Status Bar */}
-      <div className="absolute top-4 right-4 flex items-center space-x-1.5">
+      {/* Top-Right: Question Progress */}
+      <div className="absolute top-4 right-4 flex items-center space-x-2">
         <span className="text-[10px] font-mono tracking-widest text-slate-500 uppercase">
-          SYS STABLE
+          Q{currentQuestionIndex + 1} / {totalQuestions}
         </span>
         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
       </div>

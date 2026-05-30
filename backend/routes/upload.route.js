@@ -20,13 +20,13 @@ cloudinary.config({
 const upload = multer({ dest: "uploads/" });
 
 router.post("/upload-recording", upload.single("video"), async (req, res) => {
-  const interviewId = req.body.interviewId;
-  const inputPath = req.file.path;
-  const outputPath = path.join("uploads", `${interviewId}_optimized.mp4`);
-
   if (!req.file) {
     return res.status(400).json({ error: "No video file provided." });
   }
+
+  const interviewId = req.body.interviewId;
+  const inputPath = req.file.path;
+  const outputPath = path.join("uploads", `${interviewId}_optimized.mp4`);
 
   console.log(
     `[Backend] Starting FFmpeg processing for interview: ${interviewId}`,

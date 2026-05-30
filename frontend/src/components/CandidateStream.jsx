@@ -173,7 +173,7 @@ export default function CandidateStream({
       {/* Bottom-Left Corner: Candidate Label */}
       <div className="absolute bottom-4 left-4 z-20 flex items-center space-x-2 px-3 py-1.5 rounded-lg glass-pill">
         <span className="text-xs font-semibold tracking-wide text-slate-200">
-          Giriraj Joshi
+          candidate
         </span>
       </div>
 

@@ -38,7 +38,7 @@ export function useAISpeech(webcamStream) {
     isInterviewCompletedRef,
   );
 
-  const { startListening, stopListeningAndSend, cleanupVAD, audioContextRef } =
+  const { startListening, stopListeningAndSend, cleanupVAD, destroyAudioContext, audioContextRef } =
     useVoiceActivity(socketRef, setIsUserSpeaking);
 
   // Wrapped startListening that injects the current webcamStream
@@ -80,6 +80,10 @@ export function useAISpeech(webcamStream) {
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
+
+          if (audioPlaybackRef.current.src)
+            URL.revokeObjectURL(audioPlaybackRef.current.src);
+
           const blob = new Blob([bytes.buffer], { type: "audio/wav" });
           const url = URL.createObjectURL(blob);
 
@@ -191,9 +195,10 @@ export function useAISpeech(webcamStream) {
       }
     }
     cleanupVAD();
+    destroyAudioContext();
     setIsAISpeaking(false);
     setIsUserSpeaking(false);
-  }, [cleanupVAD]);
+  }, [cleanupVAD, destroyAudioContext]);
 
   return {
     currentQuestion,

@@ -7,7 +7,7 @@ export function useInterviewMedia() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
-  const [recordedChunks, setRecordedChunks] = useState([]);
+  // const [recordedChunks, setRecordedChunks] = useState([]);
 
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -15,6 +15,11 @@ export function useInterviewMedia() {
 
   const videoRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
+
+  const BACKEND_URL =
+    process.env.NODE_ENV === "production"
+      ? "https://ai-video-interview-1-ca9s.onrender.com"
+      : "http://localhost:4000";
 
   const startVideoRecording = (stream) => {
     if (!stream) return;
@@ -77,13 +82,10 @@ export function useInterviewMedia() {
         formData.append("interviewId", interviewId);
 
         try {
-          const response = await fetch(
-            "http://localhost:4000/api/upload-recording",
-            {
-              method: "POST",
-              body: formData, // Automatically sets multi-part headers
-            },
-          );
+          const response = await fetch(`${BACKEND_URL}/api/upload-recording`, {
+            method: "POST",
+            body: formData, // Automatically sets multi-part headers
+          });
           const data = await response.json();
           resolve(data);
         } catch (err) {

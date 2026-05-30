@@ -186,8 +186,6 @@ export default function InterviewPage() {
               currentQuestion={ai.currentQuestion}
               currentQuestionIndex={ai.currentQuestionIndex}
               totalQuestions={ai.totalQuestions}
-              onStartInterview={ai.startInterview}
-              onNextQuestion={ai.nextQuestion}
             />
 
             <CandidateStream

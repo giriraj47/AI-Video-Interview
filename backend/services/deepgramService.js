@@ -23,10 +23,10 @@ export class DeepgramService {
         },
       );
 
-      console.log(
-        `[Deepgram STT Response]:`,
-        JSON.stringify(response, null, 2),
-      );
+      // console.log(
+      //   `[Deepgram STT Response]:`,
+      //   JSON.stringify(response, null, 2),
+      // );
 
       const transcript =
         response.results?.channels[0]?.alternatives[0]?.transcript || "";
