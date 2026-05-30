@@ -8,8 +8,8 @@ export default function SetupPage() {
   const { videoRef, media, proctor, setCandidateInfo } = useInterview();
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("mail@mail.com");
+  const [phoneNumber, setPhoneNumber] = useState("123432123");
   const [formErrors, setFormErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -40,14 +40,11 @@ export default function SetupPage() {
     if (validateForm() && media.status === "ready") {
       setIsSubmitting(true);
       try {
-        const response = await fetch(
-          `${BACKEND_URL}/api/start-interview`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, phoneNumber }),
-          },
-        );
+        const response = await fetch(`${BACKEND_URL}/api/start-interview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, phoneNumber }),
+        });
         if (response.ok) {
           const data = await response.json();
           const candidateData = { email, phoneNumber, interviewId: data.id };
