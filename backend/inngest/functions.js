@@ -3,8 +3,12 @@ import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
 
 export const processInterviewFinalization = inngest.createFunction(
-  { id: "process-interview-finalization" },
-  { event: "interview/finalized" }, // The unique event name we'll trigger
+  // Argument 1: Configuration containing both the ID and the trigger rule
+  {
+    id: "process-interview-finalization",
+    event: "interview/finalized", // Combined into one object
+  },
+  // Argument 2: Your actual async handler function
   async ({ event, step }) => {
     const { interviewId, videoUrl } = event.data;
 
