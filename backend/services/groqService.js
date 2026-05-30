@@ -8,7 +8,7 @@ class GroqService {
       timeout: 45000,
     });
     this.sessions = {}; // Maps interviewId to conversation history
-    this.maxQuestions = 3;
+    this.maxQuestions = 1;
   }
 
   // Initialize a new interview session or reload an existing one
@@ -34,12 +34,12 @@ But right now its just in testing phase to ask really simple question like what 
       // Strip any previous system messages from the transcript first to avoid duplicates,
       // and map to clean { role, content } objects.
       const conversation = existingTranscript
-        .filter(msg => msg.role !== "system")
-        .map(msg => ({ role: msg.role, content: msg.content }));
+        .filter((msg) => msg.role !== "system")
+        .map((msg) => ({ role: msg.role, content: msg.content }));
 
       // Count the actual questions asked by checking for non-followup assistant responses
       let questionCount = 0;
-      conversation.forEach(msg => {
+      conversation.forEach((msg) => {
         if (msg.role === "assistant") {
           try {
             const parsed = JSON.parse(msg.content);
@@ -54,13 +54,15 @@ But right now its just in testing phase to ask really simple question like what 
 
       this.sessions[interviewId] = {
         questionCount,
-        history: [systemPrompt, ...conversation]
+        history: [systemPrompt, ...conversation],
       };
-      console.log(`[GroqService] Re-initialized session ${interviewId} with ${questionCount} questions already asked.`);
+      console.log(
+        `[GroqService] Re-initialized session ${interviewId} with ${questionCount} questions already asked.`,
+      );
     } else {
       this.sessions[interviewId] = {
         questionCount: 0,
-        history: [systemPrompt]
+        history: [systemPrompt],
       };
       console.log(`[GroqService] Initialized new session for ${interviewId}`);
     }
