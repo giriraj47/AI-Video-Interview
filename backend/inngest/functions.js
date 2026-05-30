@@ -3,12 +3,12 @@ import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
 
 export const processInterviewFinalization = inngest.createFunction(
+  // Argument 1: Updated configuration signature mapping to your installed SDK version
   {
     id: "process-interview-finalization",
-    // 💡 If it fails, retry up to 3 times automatically with exponential backoff
-    retries: 3,
+    triggers: [{ event: "interview/finalized" }],
   },
-  { event: "interview/finalized" },
+  // Argument 2: Your async handler function stays exactly the same
   async ({ event, step }) => {
     const { interviewId, videoUrl } = event.data;
 
@@ -16,7 +16,7 @@ export const processInterviewFinalization = inngest.createFunction(
       `[Inngest Worker] Received finalization task for ID: ${interviewId}`,
     );
 
-    // 1. ⏱️ Add a small sleep period to ensure MongoDB clusters have written/indexed the document
+    // 1. ⏱️ Sleep period to ensure MongoDB clusters finish writing/indexing
     await step.sleep("wait-for-db-sync", "3s");
 
     // 2. Run the heavy Groq LLM synthesis step
@@ -27,13 +27,13 @@ export const processInterviewFinalization = inngest.createFunction(
 
         if (!session) {
           console.log(
-            `[Inngest Worker] Session memory not active. Fetching document ${interviewId} from MongoDB...`,
+            `[Inngest Worker] Fetching document ${interviewId} from MongoDB...`,
           );
           const interviewDb = await Interview.findById(interviewId);
 
           if (!interviewDb) {
             throw new Error(
-              `Interview document not found for ID: ${interviewId}. Database write might be lagging.`,
+              `Interview document not found for ID: ${interviewId}`,
             );
           }
 
@@ -57,17 +57,9 @@ export const processInterviewFinalization = inngest.createFunction(
         updateFields.videoUrl = videoUrl;
       }
 
-      const updatedDoc = await Interview.findByIdAndUpdate(
-        interviewId,
-        updateFields,
-        { new: true },
-      );
-      if (!updatedDoc) {
-        throw new Error(
-          `Failed to update interview document. Document with ID ${interviewId} went missing during save step.`,
-        );
-      }
-      return updatedDoc;
+      return await Interview.findByIdAndUpdate(interviewId, updateFields, {
+        new: true,
+      });
     });
 
     // 4. Perform cleanup
