@@ -4,6 +4,7 @@ import AIInterviewer from "../components/AIInterviewer";
 import CandidateStream from "../components/CandidateStream";
 import TranscriptionPanel from "../components/TranscriptionPanel";
 import { useInterview } from "../context/InterviewContext";
+import { BACKEND_URL } from "../config";
 
 export default function InterviewPage() {
   const { videoRef, media, proctor, ai, candidateInfo, setCandidateInfo } = useInterview();
@@ -49,7 +50,7 @@ export default function InterviewPage() {
     const saveInterview = async () => {
       try {
         console.log("[InterviewPage] Saving interview...");
-        const response = await fetch("http://localhost:4000/api/save-interview", {
+        const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

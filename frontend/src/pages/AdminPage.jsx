@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { BACKEND_URL } from "../config";
 
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,7 +36,7 @@ export default function AdminPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/verify`, {
+      const response = await fetch(`${BACKEND_URL}/api/admin/verify`, {
         headers: { "x-admin-secret": keyToVerify }
       });
       if (response.ok) {
@@ -58,7 +59,7 @@ export default function AdminPage() {
   const fetchInterviews = async (key) => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:4000/api/admin/interviews`, {
+      const response = await fetch(`${BACKEND_URL}/api/admin/interviews`, {
         headers: { "x-admin-secret": key }
       });
       if (response.ok) {

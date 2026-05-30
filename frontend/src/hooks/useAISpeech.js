@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import io from "socket.io-client";
+import { BACKEND_URL } from "../config";
 
 export function useAISpeech(webcamStream) {
   const [currentQuestion, setCurrentQuestion] = useState("");
@@ -193,7 +194,7 @@ export function useAISpeech(webcamStream) {
   }, [startListening]);
 
   useEffect(() => {
-    socketRef.current = io("http://localhost:4000");
+    socketRef.current = io(BACKEND_URL);
 
     socketRef.current.on("connect", () => {
       console.log("[Socket] Connected to backend.");

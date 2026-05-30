@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useInterview } from "../context/InterviewContext";
+import { BACKEND_URL } from "../config";
 import { useNavigate } from "react-router-dom";
 import CandidateStream from "./CandidateStream";
 
@@ -40,7 +41,7 @@ export default function SetupPage() {
       setIsSubmitting(true);
       try {
         const response = await fetch(
-          "http://localhost:4000/api/start-interview",
+          `${BACKEND_URL}/api/start-interview`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
