@@ -1,7 +1,6 @@
 import express from "express";
 import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
-import { inngest } from "../inngest/client.js";
 
 const router = express.Router();
 
@@ -48,10 +47,10 @@ router.post("/start-interview", async (req, res) => {
   }
 });
 
-// Save/Finalize Interview
+// Save/Finalize Interview — responds INSTANTLY, processes in background
 router.post("/save-interview", async (req, res) => {
   try {
-    const { interviewId, videoUrl } = req.body;
+    const { interviewId } = req.body;
 
     if (!interviewId) {
       return res
@@ -59,87 +58,70 @@ router.post("/save-interview", async (req, res) => {
         .json({ error: "Missing required field: interviewId" });
     }
 
-    await inngest.send({
-      name: "interview/finalized",
-      data: {
-        interviewId,
-        videoUrl,
-      },
-    });
-
-    // 1. 🚀 INSTANT DISMISSAL: Respond immediately to release frontend thread
+    // 🚀 RESPOND IMMEDIATELY — release the frontend thread
     res.status(200).json({
       success: true,
-      message:
-        "Data payload safely acknowledged. Finalization executing in background pipeline.",
+      message: "Interview finalization started in background.",
       id: interviewId,
     });
 
-    // 2. 🌀 DECOUPLED ASYNC WORKER: Execute execution tasks down inside a background loop
+    // 🌀 BACKGROUND PROCESSING — runs after response is sent
     (async () => {
       try {
         console.log(
-          `[Background AI Worker] Commencing evaluation sequence for context ID: ${interviewId}`,
+          `[Background] Starting evaluation for interview: ${interviewId}`,
         );
 
-        // Ensure memory context contains loaded session
+        // Ensure the in-memory session is available
         let session = groqService.sessions[interviewId];
         if (!session) {
           const interviewDb = await Interview.findById(interviewId);
           if (!interviewDb) {
             console.error(
-              `[Background AI Worker Error] Aborting. Document not found for: ${interviewId}`,
+              `[Background] Interview document not found: ${interviewId}`,
             );
             return;
           }
           console.log(
-            `[Background AI Worker] Hydrating active session structure from historical database logs: ${interviewId}`,
+            `[Background] Hydrating session from database: ${interviewId}`,
           );
           groqService.initSession(interviewId, interviewDb.transcript);
         }
 
+        // Run Groq LLM evaluation
         console.log(
-          `[Background AI Worker] Querying LLM synthesis for session ${interviewId}...`,
+          `[Background] Running Groq evaluation for: ${interviewId}`,
         );
         const evaluation = await groqService.evaluateInterview(interviewId);
 
+        // Save results to MongoDB
         console.log(
-          `[Background DB Worker] Committing completed metrics profile to storage layout...`,
+          `[Background] Saving evaluation to database: ${interviewId}`,
         );
-        const updateFields = {
+        await Interview.findByIdAndUpdate(interviewId, {
           evaluation,
           status: "Completed",
-        };
-        if (videoUrl) {
-          updateFields.videoUrl = videoUrl;
-        }
+        });
 
-        await Interview.findByIdAndUpdate(interviewId, updateFields);
-
-        // Clean up instance profile out of state memory allocation
+        // Cleanup in-memory session
         groqService.cleanupSession(interviewId);
         console.log(
-          `[Background Pipeline] Success. Lifecycle tasks fully completed for session: ${interviewId}`,
+          `[Background] ✅ Interview finalization complete: ${interviewId}`,
         );
-      } catch (workerError) {
+      } catch (err) {
         console.error(
-          `[Background Pipeline Error] Critical trace inside async processing worker:`,
-          workerError,
+          `[Background] ❌ Error processing interview ${interviewId}:`,
+          err,
         );
       }
-    })(); // Self-invoke structural worker block instantly
+    })();
   } catch (error) {
-    console.error(
-      "[API] Error handling initialization trigger for save route:",
-      error,
-    );
-    // Safety check fallback to prevent server app crashes if an error happens before headers clear
+    console.error("[API] Error in save-interview route:", error);
     if (!res.headersSent) {
-      res.status(500).json({
-        error: "Failed to allocate pipeline execution initialization handler",
-      });
+      res.status(500).json({ error: "Failed to start interview finalization" });
     }
   }
 });
 
 export default router;
+

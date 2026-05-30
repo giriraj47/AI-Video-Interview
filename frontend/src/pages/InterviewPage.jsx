@@ -62,70 +62,46 @@ export default function InterviewPage() {
     }
   }, [interviewState, candidateInfo, media, ai]);
 
-  // Watch for interview completion
-  // Watch for interview completion
+  // Watch for interview completion — navigate IMMEDIATELY, process in background
   useEffect(() => {
-    const saveInterview = async () => {
-      const targetInterviewId = candidateInfo?.interviewId;
-      if (!targetInterviewId) return;
-
-      try {
-        console.log("[InterviewPage] Finalizing local video recording...");
-        let finalVideoUrl = null;
-
-        // 1. 🛑 STOP AND GENERATE: This stops the streams locally and triggers the upload signature instantly
-        if (media.stopVideoRecordingAndUpload) {
-          // We await JUST the upload initialization to ensure the browser hands off the file payload safely
-          const uploadResult =
-            await media.stopVideoRecordingAndUpload(targetInterviewId);
-          finalVideoUrl = uploadResult?.videoUrl;
-          console.log(
-            "[InterviewPage] Cloudinary upload dispatched cleanly:",
-            finalVideoUrl,
-          );
-        }
-
-        // 2. 🚀 TRIGGER QUEUE: Ship the metadata & video link immediately to your backend
-        console.log(
-          "[InterviewPage] Dispatching finalization payload to background queue...",
-        );
-        const response = await fetch(`${BACKEND_URL}/api/save-interview`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            interviewId: targetInterviewId,
-            videoUrl: finalVideoUrl, // This will now actually have your Cloudinary URL!
-          }),
-        });
-
-        if (!response.ok) {
-          console.error(
-            "Failed to queue interview data payload:",
-            await response.text(),
-          );
-        }
-      } catch (error) {
-        console.error("Critical error in frontend save sequence:", error);
-      }
-
-      // 3. 🏁 INSTANT ROUTE: Move the user immediately.
-      // They don't have to wait for Groq anymore because Inngest handles that asynchronously!
-      console.log(
-        "[InterviewPage] Cleaning up state context and routing candidate.",
-      );
-      ai.resetSpeech();
-      media.handleConfirmExit();
-      setCandidateInfo(null);
-      navigate("/result");
-    };
-
     if (
-      ai.isInterviewCompleted &&
-      interviewState === "interview" &&
-      candidateInfo?.interviewId
+      !ai.isInterviewCompleted ||
+      interviewState !== "interview" ||
+      !candidateInfo?.interviewId
     ) {
-      saveInterview();
+      return;
     }
+
+    const targetInterviewId = candidateInfo.interviewId;
+
+    // 1. 🚀 TRIGGER BACKEND EVALUATION — fire and forget (no await)
+    //    This kicks off the Groq evaluation in the background on the server.
+    fetch(`${BACKEND_URL}/api/save-interview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interviewId: targetInterviewId }),
+    }).catch((err) =>
+      console.error("[InterviewPage] Failed to trigger save-interview:", err),
+    );
+
+    // 2. 🎥 STOP RECORDING & UPLOAD VIDEO — fire and forget (no await)
+    //    The upload route handles Cloudinary + DB update in the background.
+    if (media.stopVideoRecordingAndUpload) {
+      media.stopVideoRecordingAndUpload(targetInterviewId).catch((err) =>
+        console.error("[InterviewPage] Background video upload error:", err),
+      );
+    }
+
+    // 3. 🏁 INSTANT NAVIGATION — user sees results page immediately
+    //    NOTE: We do NOT call handleConfirmExit() here because it kills media
+    //    tracks before the recorder's onstop callback can build the video blob.
+    //    The ResultsPage already calls handleConfirmExit() on mount.
+    console.log(
+      "[InterviewPage] Interview complete. Navigating to results immediately.",
+    );
+    ai.resetSpeech();
+    setCandidateInfo(null);
+    navigate("/result");
   }, [
     ai.isInterviewCompleted,
     interviewState,

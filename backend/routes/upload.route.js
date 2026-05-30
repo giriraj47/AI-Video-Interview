@@ -5,6 +5,7 @@ import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fs from "fs";
 import path from "path";
+import { Interview } from "../models/Interview.js";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const router = express.Router();
@@ -55,8 +56,15 @@ router.post("/upload-recording", upload.single("video"), async (req, res) => {
         fs.unlinkSync(inputPath);
         fs.unlinkSync(outputPath);
 
-        // 4. Update your database record here
-        // await InterviewModel.updateOne({ interviewId }, { videoUrl: uploadResult.secure_url });
+        // 4. Save video URL directly to database
+        if (interviewId) {
+          await Interview.findByIdAndUpdate(interviewId, {
+            videoUrl: uploadResult.secure_url,
+          });
+          console.log(
+            `[Backend] ✅ Video URL saved to database for interview: ${interviewId}`,
+          );
+        }
 
         return res.json({ success: true, videoUrl: uploadResult.secure_url });
       } catch (uploadError) {
