@@ -95,8 +95,8 @@ export function useInterviewMedia() {
     try {
       const webcam = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 72 },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
           facingMode: "user",
         },
         audio: true,
