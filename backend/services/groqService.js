@@ -64,7 +64,7 @@ Always respond with a valid JSON object matching this schema:
 }
 Keep your questions professional, concise, and conversational. Do not output anything outside of the JSON object.
 Your first task is to greet the candidate and ask the first technical question.
-this is just a test run ask a basic question like how are you and stuff. Make the intrview last for 10 minutes to maximum 12 minutes.
+Make the intrview last for 10 minutes to maximum 12 minutes.
 `,
     };
 
