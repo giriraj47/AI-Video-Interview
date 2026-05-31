@@ -8,8 +8,45 @@ class GroqService {
       timeout: 45000,
     });
     this.sessions = {}; // Maps interviewId to conversation history
-    this.maxQuestions = 1;
-    this.jobDescription = `front end intern
+    this.maxQuestions = 7;
+    this.jobDescription = `Role Overview
+We are looking for an enthusiastic and motivated MERN Stack Developer Intern to join our engineering team. In this role, you will get hands-on experience building scalable, real-world web applications. You will work closely with our senior developers and product managers to design, build, and maintain features across the entire software development lifecycle. If you have a solid foundation in JavaScript and a strong desire to master MongoDB, Express.js, React.js, and Node.js, we want to hear from you!
+
+Key Responsibilities
+Front-End Development: Assist in building responsive, user-friendly, and dynamic web interfaces using React.js, HTML5, and CSS3.
+
+Back-End Development: Help develop and maintain server-side logic and RESTful APIs using Node.js and Express.js.
+
+Database Management: Work with MongoDB to write efficient queries, design basic schemas, and manage data storage.
+
+Debugging & Testing: Identify, troubleshoot, and resolve bugs. Write basic unit tests to ensure code reliability.
+
+Collaboration: Participate in daily stand-ups, team meetings, and code reviews. Work closely with UI/UX designers to translate designs into functional code.
+
+Version Control: Manage code repositories and collaborate using Git and GitHub/GitLab.
+
+Qualifications & Skills
+Education: Currently pursuing or recently graduated with a Bachelor’s/Master’s degree in Computer Science, Software Engineering, IT, or a related technical field.
+
+Core Languages: Strong foundational knowledge of JavaScript (ES6+), HTML, and CSS.
+
+Stack Familiarity: Basic understanding or academic/project-level experience with the MERN stack (MongoDB, Express, React, Node).
+
+Tools: Familiarity with version control systems (Git) and API testing tools (like Postman).
+
+Soft Skills: * Strong analytical and problem-solving abilities.
+
+Eagerness to learn new technologies and adapt to a fast-paced startup environment.
+
+Good written and verbal communication skills.
+
+Bonus Points if you have:
+
+Deployed personal projects using the MERN stack (please include links to your GitHub or portfolio!).
+
+Familiarity with state management libraries like Redux or Context API.
+
+Understanding of basic cloud deployment (e.g., AWS, Heroku, Vercel).
 `;
   }
 
@@ -27,7 +64,7 @@ Always respond with a valid JSON object matching this schema:
 }
 Keep your questions professional, concise, and conversational. Do not output anything outside of the JSON object.
 Your first task is to greet the candidate and ask the first technical question.
-this is just a test run ask a basic question like how are you and stuff.
+this is just a test run ask a basic question like how are you and stuff. Make the intrview last for 10 minutes to maximum 12 minutes.
 `,
     };
 
