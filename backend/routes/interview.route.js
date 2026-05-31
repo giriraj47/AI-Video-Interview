@@ -98,9 +98,14 @@ router.post("/save-interview", async (req, res) => {
         console.log(
           `[Background] Saving evaluation to database: ${interviewId}`,
         );
+        
+        // First get the current interview to check if videoUrl exists
+        const currentInterview = await Interview.findById(interviewId);
+        const shouldMarkComplete = currentInterview && currentInterview.videoUrl;
+        
         await Interview.findByIdAndUpdate(interviewId, {
           evaluation,
-          status: "Completed",
+          ...(shouldMarkComplete ? { status: "Completed" } : {})
         });
 
         // Cleanup in-memory session
