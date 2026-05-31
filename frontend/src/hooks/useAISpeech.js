@@ -38,8 +38,13 @@ export function useAISpeech(webcamStream) {
     isInterviewCompletedRef,
   );
 
-  const { startListening, stopListeningAndSend, cleanupVAD, destroyAudioContext, audioContextRef } =
-    useVoiceActivity(socketRef, setIsUserSpeaking);
+  const {
+    startListening,
+    stopListeningAndSend,
+    cleanupVAD,
+    destroyAudioContext,
+    audioContextRef,
+  } = useVoiceActivity(socketRef, setIsUserSpeaking);
 
   // Wrapped startListening that injects the current webcamStream
   const startListeningWrapper = useCallback(() => {

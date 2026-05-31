@@ -82,12 +82,63 @@ export function useInterviewMedia() {
           type: "video/webm",
         });
 
-        const formData = new FormData();
-        formData.append("video", videoBlob, "interview.webm");
-        formData.append("interviewId", interviewId);
-
         try {
-          console.log("[Media] Dispatching file binary to backend route...");
+          // First try signed upload to Cloudinary (more efficient)
+          const signedUrlResponse = await fetch(
+            `${BACKEND_URL}/api/signed-upload-url?interviewId=${interviewId}`
+          );
+
+          if (signedUrlResponse.ok) {
+            const signedData = await signedUrlResponse.json();
+            console.log("[Media] Using signed upload to Cloudinary...");
+            
+            const cloudinaryFormData = new FormData();
+            cloudinaryFormData.append("file", videoBlob, "interview.webm");
+            cloudinaryFormData.append("api_key", signedData.apiKey);
+            cloudinaryFormData.append("timestamp", signedData.timestamp);
+            cloudinaryFormData.append("signature", signedData.signature);
+            cloudinaryFormData.append("public_id", signedData.publicId);
+            cloudinaryFormData.append("resource_type", "video");
+            cloudinaryFormData.append("eager", "w_640,h_480,c_limit,f_mp4");
+            cloudinaryFormData.append("eager_async", "true");
+
+            const cloudinaryResponse = await fetch(
+              `https://api.cloudinary.com/v1_1/${signedData.cloudName}/video/upload`,
+              {
+                method: "POST",
+                body: cloudinaryFormData,
+              }
+            );
+
+            if (cloudinaryResponse.ok) {
+              const cloudinaryData = await cloudinaryResponse.json();
+              console.log("[Media] Signed upload complete!");
+              resolve({ 
+                success: true, 
+                videoUrl: cloudinaryData.secure_url,
+                message: "Video uploaded successfully"
+              });
+              return;
+            } else {
+              console.warn(
+                "[Media] Signed upload failed, falling back to backend upload"
+              );
+            }
+          }
+        } catch (signedErr) {
+          console.warn(
+            "[Media] Signed upload attempt failed, falling back to backend upload:",
+            signedErr
+          );
+        }
+
+        // Fallback to backend upload
+        try {
+          console.log("[Media] Using fallback backend upload...");
+          const formData = new FormData();
+          formData.append("video", videoBlob, "interview.webm");
+          formData.append("interviewId", interviewId);
+
           const response = await fetch(`${BACKEND_URL}/api/upload-recording`, {
             method: "POST",
             body: formData,

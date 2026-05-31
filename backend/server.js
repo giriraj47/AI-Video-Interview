@@ -8,9 +8,6 @@ import { setupInterviewSocket } from "./sockets/interviewHandler.js";
 import uploadRoute from "./routes/upload.route.js";
 import interviewRoute from "./routes/interview.route.js";
 import adminRoute from "./routes/admin.route.js";
-import { serve } from "inngest/express";
-import { inngest } from "./inngest/client.js";
-import { processInterviewFinalization } from "./inngest/functions.js";
 
 const app = express();
 app.use(cors());
@@ -20,14 +17,6 @@ app.use(express.json());
 app.use("/api", uploadRoute);
 app.use("/api", interviewRoute);
 app.use("/api/admin", adminRoute);
-
-app.use(
-  "/api/inngest",
-  serve({
-    client: inngest,
-    functions: [processInterviewFinalization],
-  }),
-);
 
 // ── MongoDB ──
 mongoose
