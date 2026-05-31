@@ -50,12 +50,60 @@ MongoDB  Deepgram Cloudinary
       (LLM Brain)
 ```
 
-### Media Flow
+### Complete Data Flow
 
-1. **Frontend → Backend**: Candidate's audio/video is captured and sent via WebSocket
-2. **Backend → Storage**: After interview completion, video is uploaded to Cloudinary via FFmpeg optimization
-3. **Backend → Transcription**: Audio chunks are sent to Deepgram for real-time speech-to-text
-4. **Transcription → AI Evaluation**: Transcripts are processed by Groq AI for conversation and evaluation
+#### 1. Interview Setup (HTTP)
+1. Candidate enters email/phone on setup page
+2. Frontend sends `POST /api/start-interview`
+3. Backend creates/retrieves `Interview` document in MongoDB (status: `In Progress`)
+4. Backend returns `interviewId` to frontend
+5. Frontend stores `interviewId` in localStorage and navigates to interview page
+
+#### 2. Real-Time Interview (WebSocket)
+1. Interview page initializes media (webcam/screen recording starts)
+2. Frontend emits `start_interview({ interviewId })`
+3. Backend:
+   - Initializes Groq session
+   - Generates first question via Groq LLM
+   - Converts to speech via Deepgram TTS
+   - Saves question to `Interview.transcript`
+   - Emits `ai_response({ text, audioBuffer, ... })`
+4. Frontend:
+   - Plays AI audio
+   - Displays question
+   - Starts Voice Activity Detection (VAD)
+5. Candidate speaks → VAD detects speech/silence → records audio chunk
+6. Frontend emits `submit_audio({ audioBuffer, mimetype })`
+7. Backend:
+   - Transcribes via Deepgram STT
+   - Saves user transcript to MongoDB
+   - Sends to Groq for next question
+   - Repeats until `is_interview_complete: true`
+
+#### 3. Interview Completion & Upload
+1. Frontend detects completion, triggers two fire-and-forget actions:
+   a. `POST /api/save-interview` (starts Groq evaluation in background)
+   b. `stopVideoRecordingAndUpload(interviewId)` (stops recording and uploads video)
+
+#### 4. Video Upload (Two Paths)
+
+##### Path A: Primary - Signed Cloudinary Upload (Frontend Direct)
+1. Frontend fetches signed URL: `GET /api/signed-upload-url?interviewId=123`
+2. Frontend uploads video **directly to Cloudinary**
+3. Cloudinary triggers `cloudinary-webhook` on backend
+4. Webhook saves `videoUrl` to MongoDB and checks for `evaluation` → if both exist, sets status to `Completed`
+
+##### Path B: Fallback - Backend Upload
+1. If signed upload fails, frontend sends `POST /api/upload-recording` with `FormData`
+2. Backend:
+   a. Multer saves file to temp disk synchronously
+   b. Updates `Interview.status: In Progress`
+   c. **Responds immediately** with `200 OK` (frontend can close tab safely!)
+   d. Starts background processing:
+      i. Uploads raw file to Cloudinary (no FFmpeg!)
+      ii. Saves `videoUrl` to MongoDB
+      iii. Checks for `evaluation` → if both exist, sets status to `Completed`
+      iv. Deletes temp file
 
 ### WebSocket/Event Flow
 
@@ -67,75 +115,75 @@ MongoDB  Deepgram Cloudinary
 6. Client can also send `proctor_flag` events for suspicious activities
 7. On disconnect, server schedules cleanup with grace period
 
-## Technical Decisions & Tradeoffs
+## Key Technical Decisions & Recent Changes
 
-### Why This Approach?
+### 1. WebSockets Over Polling
+- **Why?** Real-time, low-latency bidirectional communication for natural conversation
+- **Tradeoff:** Slightly more complex server setup, but worth it for UX
 
-We chose a real-time WebSocket-based architecture to enable natural, conversational AI interviews rather than pre-recorded question-and-answer sessions. This creates a more authentic interview experience.
+### 2. Fire-and-Forget Background Processing
+- **Why?** Candidate doesn't wait for evaluation/upload to finish
+- **Implementation:** Async IIFEs in backend routes respond immediately, then process in background
 
-### Why Streaming Over Full Upload?
+### 3. Dual Upload Paths (Signed + Backend Fallback)
+- **Primary:** Signed Cloudinary upload (faster, less server load)
+- **Fallback:** Backend upload (more reliable, continues if tab closes after `200 OK`)
 
-- **Real-time interaction**: Enables back-and-forth conversation
-- **Lower memory usage**: No need to store large files in memory
-- **Faster feedback**: Candidates get immediate AI responses
-- **Progressive recovery**: Can resume from interruptions without losing all data
-- **Bandwidth efficiency**: Media is transmitted in chunks
+### 4. Grace Period Reconnection (30 Seconds)
+- **Why?** Candidates shouldn't lose progress due to temporary network blips
+- **Implementation:** Server keeps session in memory, cancels cleanup if client reconnects within 30s
 
-### Why This Architecture/Design?
+### 5. Status Coordination Logic (Recent Change)
+- **Problem:** Race condition where either video OR evaluation could finish first
+- **Solution:** Interview is only marked `Completed` when **both** `videoUrl` AND `evaluation` exist
+- **Where it's implemented:**
+  - Cloudinary webhook (`upload.route.js`)
+  - Background upload completion (`upload.route.js`)
+  - Evaluation completion (`interview.route.js`)
 
-- **Separation of concerns**: Frontend handles UI/capture, backend handles processing/storage
-- **Scalable services**: Each component (Deepgram, Groq, Cloudinary) can scale independently
-- **Persistence layer**: MongoDB ensures interview data is durable
-- **Event-driven**: WebSockets enable low-latency bidirectional communication
+### 6. Removed FFmpeg (Recent Change)
+- **Why?** FFmpeg transcoding was CPU-intensive and slowed down uploads
+- **Solution:** Upload raw video directly to Cloudinary, use Cloudinary's `eager` transformations for optimization
+- **Benefits:** Faster uploads, less backend complexity, no CPU bottleneck
 
 ## Failure Scenarios & Edge Cases
 
 ### Network Interruptions
-
 - Temporary loss of connectivity between frontend and backend
 
 ### Duplicate Chunks
-
 - Same audio chunk being sent multiple times due to retransmissions
 
 ### Camera/Mic Disconnects
-
 - Media devices becoming unavailable mid-interview
 
 ### Partial Upload Failures
-
 - Video upload to Cloudinary failing partway through
 
 ### WebSocket Reconnects
-
 - Client reconnecting after connection drop
 
 ### Empty/Corrupted Media Chunks
-
 - Invalid or zero-byte audio data being transmitted
 
 ## Recovery Mechanisms
 
 ### How System Handles Reconnects
-
 - **Grace period**: Server keeps session alive for 30 seconds after disconnect
 - **Session restoration**: Client sends `interviewId` on reconnect, server restores state
 - **History replay**: Server replays last AI question to resume conversation
 
 ### Retry/Recovery Logic
-
 - **Transcript persistence**: Every message is saved to MongoDB immediately
 - **Idempotent operations**: Database updates use `findByIdAndUpdate` which is safe to retry
 - **Cleanup timers**: Pending cleanup is canceled if client reconnects within grace period
 
 ### Chunk Recovery Strategy
-
 - Each audio submission is processed independently
 - Empty transcripts trigger a "please repeat" response instead of failing
 - Transcripts are stored before AI processing to prevent data loss
 
 ### Failure Handling Approach
-
 - **Fail open for candidate experience**: Prioritizes letting candidate continue over strict error handling
 - **Real-time error events**: Client is notified of errors via `interview_error` events
 - **Graceful degradation**: System can function even if some features (like proctoring) fail
@@ -143,7 +191,6 @@ We chose a real-time WebSocket-based architecture to enable natural, conversatio
 ## Product Thinking
 
 ### Recruiter Experience Considerations
-
 - **Admin dashboard**: Centralized view of all interviews
 - **Evaluation scorecards**: AI provides structured scores and hiring recommendations
 - **Transcript access**: Full conversation history available for review
@@ -151,7 +198,6 @@ We chose a real-time WebSocket-based architecture to enable natural, conversatio
 - **Video playback**: Recorded interviews stored in Cloudinary
 
 ### Candidate Experience Considerations
-
 - **Simple setup**: Minimal configuration needed to start
 - **Real-time feedback**: Instant AI responses create natural flow
 - **Resume capability**: Can reconnect and continue if interrupted
@@ -159,7 +205,6 @@ We chose a real-time WebSocket-based architecture to enable natural, conversatio
 - **Visual cues**: Transcription panel shows what was understood
 
 ### How Suspicious Activities Are Tracked
-
 - **Proctoring flags**: Client-side detection of tab switches, window defocus, copy-paste, right-click
 - **Flags stored in DB**: Each flag includes type, timestamp, and description
 - **Dashboard visibility**: Recruiters can see all flags during review
@@ -172,7 +217,6 @@ We chose a real-time WebSocket-based architecture to enable natural, conversatio
   - `MULTIPLE_PEOPLE`: Multiple faces detected
 
 ### UX Decisions Made
-
 - **Minimalist interface**: Reduces candidate distraction
 - **Visual progress indicator**: Shows how many questions remain
 - **Audio visualizer**: Confirms mic is working
@@ -182,47 +226,56 @@ We chose a real-time WebSocket-based architecture to enable natural, conversatio
 ## Scalability Considerations
 
 ### What May Break At Scale
-
 - **WebSocket connections**: Single server can only handle limited concurrent connections
 - **AI API rate limits**: Deepgram and Groq have rate limits that could be hit
 - **Database write load**: High volume of concurrent interviews could saturate MongoDB
-- **FFmpeg processing**: Video optimization is CPU-intensive
 
 ### Performance Bottlenecks
-
 - **Speech-to-text processing**: Each audio chunk requires API call to Deepgram
 - **Text-to-speech generation**: Each AI response requires TTS processing
-- **Video transcoding**: FFmpeg processing is single-threaded and CPU-heavy
 - **Database writes**: Every transcript message requires a database update
 
-### Future Improvements for High Concurrency
+### Future Improvements for Production (If I Had More Time)
 
-1. **Horizontal scaling**: Add multiple backend servers with Redis for socket.io adapter
-2. **Message queue**: Use Inngest (already integrated) for async processing of non-real-time tasks
-3. **Database optimization**: Add read replicas, sharding, and indexing improvements
-4. **Caching**: Cache frequent AI prompts and responses
-5. **Worker pool**: Offload FFmpeg processing to dedicated worker servers
-6. **Rate limiting**: Implement client-side and server-side rate limiting
-7. **CDN usage**: Serve static assets and frontend via CDN
+#### Upload Pipeline Enhancements
+1. **Resumable Chunked Uploads**: Split video into 5–10MB chunks, store progress in `localStorage`, resume if tab closes
+2. **SHA-256 File Integrity**: Frontend computes hash, backend verifies after upload
+3. **Service Worker Background Upload**: Upload continues even if tab closes entirely
+4. **Progress Bar & UX**: Show upload % and estimated time remaining
+5. **Exponential Backoff Retries**: Retry failed uploads with increasing delays
+6. **BullMQ + Redis Queue**: Persist upload queue to survive server restarts
+
+#### Scalability Enhancements
+1. **Horizontal Scaling**: Add multiple backend servers with Redis for Socket.io adapter
+2. **Read Replicas & Sharding**: Scale MongoDB horizontally
+3. **Rate Limiting**: Client-side and server-side rate limiting
+4. **Structured Logging & Monitoring**: Winston/Pino for logs, Prometheus for metrics
+5. **Circuit Breakers**: Protect against AI API outages
+
+#### Other Improvements
+- JWT Authentication for admin routes
+- Interview templates (custom question banks)
+- Multi-language support
+- AI-powered proctoring (computer vision for eye-tracking, etc.)
 
 ## Project Structure
 
 ```
 AI Video Interview/
 ├── backend/
-│   ├── inngest/          # Background job processing
+│   ├── inngest/          # Background job processing (currently unused)
 │   ├── middleware/       # Auth and other middleware
 │   ├── models/           # MongoDB schemas
-│   ├── routes/           # API endpoints
+│   ├── routes/           # API endpoints (interview, upload, admin)
 │   ├── services/         # Deepgram and Groq integrations
-│   ├── sockets/          # WebSocket handlers
+│   ├── sockets/          # WebSocket handlers (interviewHandler.js)
 │   ├── package.json
 │   └── server.js
 ├── frontend/
 │   ├── src/
 │   │   ├── components/   # React components
-│   │   ├── context/      # React context
-│   │   ├── hooks/        # Custom hooks
+│   │   ├── context/      # React context (InterviewContext.jsx)
+│   │   ├── hooks/        # Custom hooks (useSocket, useVoiceActivity, etc.)
 │   │   ├── pages/        # Page components
 │   │   └── config.js
 │   ├── package.json
@@ -233,7 +286,6 @@ AI Video Interview/
 ## Setup Instructions
 
 ### Prerequisites
-
 - Node.js 18+
 - MongoDB
 - Deepgram API key
@@ -241,7 +293,6 @@ AI Video Interview/
 - Cloudinary account
 
 ### Backend Setup
-
 ```bash
 cd backend
 npm install
@@ -251,7 +302,6 @@ npm run dev
 ```
 
 ### Frontend Setup
-
 ```bash
 cd frontend
 npm install
@@ -259,7 +309,6 @@ npm run dev
 ```
 
 ### Environment Variables (.env in backend)
-
 ```
 MONGO_URI=mongodb://localhost:27017/ai-interview
 DEEPGRAM_API_KEY=your_deepgram_key
@@ -269,3 +318,11 @@ CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 PORT=4000
 ```
+
+## How AI Tools Were Used In Development
+This project was built with AI as a collaborative tool:
+- **Brainstorming & Architecture**: AI helped outline tech stack and high-level flow
+- **Code Generation**: AI generated working skeletons for WebSocket handlers and API routes
+- **Debugging**: AI helped identify and fix issues like the status coordination race condition
+- **Documentation**: AI helped structure this README and video script
+- **Prioritization**: AI listed options, but final decisions (like removing FFmpeg for speed) were mine
