@@ -46,6 +46,49 @@ MongoDB  Deepgram (STT/TTS)
       Groq AI (LLM Brain)
 ```
 
+sequenceDiagram
+    participant C as Candidate (Frontend)
+    participant S as Backend (Socket.io)
+    participant DG as Deepgram (STT/TTS)
+    participant G as Groq AI (LLM)
+    participant DB as MongoDB
+
+    C->>S: emit "start_interview" { interviewId }
+    S->>DB: Fetch Interview document
+    alt New Interview
+        S->>G: Generate first question
+        G-->>S: Question + is_interview_complete: false
+        S->>DB: Save question to transcript
+    else Resuming Interview
+        S->>G: Restore session from transcript
+        S->>DB: Find last question
+    end
+    S->>DG: Convert question text → speech
+    DG-->>S: Audio buffer
+    S->>C: emit "ai_response" { text, audio, ... }
+    C->>C: Play AI audio + show question text
+    C->>C: Start VAD (Voice Activity Detection)
+    C->>C: Candidate speaks → VAD records audio
+    C->>C: VAD detects silence → stop recording
+    C->>S: emit "submit_audio" { audioBuffer }
+    S->>DG: Transcribe audio → text
+    DG-->>S: Transcript text
+    S->>DB: Save transcript
+    S->>G: Send transcript + conversation history
+    G-->>S: Next question OR evaluation
+    alt is_interview_complete == true
+        S->>DB: Save final transcript
+        S->>C: emit "ai_response" { isComplete: true }
+        C->>C: Navigate to ResultsPage
+    else is_interview_complete == false
+        S->>DG: Convert next question → speech
+        DG-->>S: Audio buffer
+        S->>C: emit "ai_response" { text, audio, ... }
+        Note over C,S: Loop repeats!
+    end
+
+
+
 ### Complete Data Flow
 1. **Interview Setup (HTTP)**: Candidate enters email/phone → Backend creates Interview document in MongoDB → Returns interviewId
 2. **Real-Time Interview (WebSocket)**:
