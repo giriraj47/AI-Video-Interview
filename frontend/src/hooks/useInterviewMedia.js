@@ -24,7 +24,7 @@ export function useInterviewMedia() {
       videoRecorderRef.current.state !== "inactive"
     ) {
       console.warn(
-        "[Media] Video recorder already running. Aborting duplicate spawn."
+        "[Media] Video recorder already running. Aborting duplicate spawn.",
       );
       return;
     }
@@ -44,7 +44,7 @@ export function useInterviewMedia() {
         if (e.data && e.data.size > 0) {
           const timestamp = new Date().toLocaleTimeString();
           console.log(
-            `[MediaRecorder] 📦 Chunk captured safely! Size: ${(e.data.size / 1024).toFixed(2)} KB at ${timestamp}`
+            `[MediaRecorder] 📦 Chunk captured safely! Size: ${(e.data.size / 1024).toFixed(2)} KB at ${timestamp}`,
           );
           videoChunksRef.current.push(e.data);
         }
@@ -53,27 +53,32 @@ export function useInterviewMedia() {
       // Check chunks every 5 seconds to keep memory buffer light but stable
       videoRecorderRef.current.start(5000);
       console.log(
-        "[Media] Full session video recording started safely with lightweight codec."
+        "[Media] Full session video recording started safely with lightweight codec.",
       );
     } catch (error) {
       console.error("Failed to spin up MediaRecorder:", error);
     }
   };
 
-  // 🛑 Stop recording (NO UPLOAD - we removed Cloudinary!)
-  const stopVideoRecordingAndUpload = async (interviewId) => {
+  // 🛑 Stop recording and return the blob
+  const stopVideoRecordingAndUpload = async () => {
     return new Promise((resolve) => {
       if (
         !videoRecorderRef.current ||
         videoRecorderRef.current.state === "inactive"
       ) {
         console.warn("[Media] Cannot stop recording: Recorder is not active.");
-        return resolve(null);
+        return resolve({ success: false });
       }
 
       videoRecorderRef.current.onstop = () => {
-        console.log("[Media] Recording stopped, skipping Cloudinary upload (disabled for now).");
-        resolve({ success: true, message: "Recording stopped successfully" });
+        console.log("[Media] Recording stopped, resolving with blob.");
+        const videoBlob = new Blob(videoChunksRef.current, {
+          type: "video/webm",
+        });
+
+        // We will do the actual upload in InterviewPage
+        resolve({ success: true, videoBlob });
       };
 
       videoRecorderRef.current.stop();
@@ -120,7 +125,7 @@ export function useInterviewMedia() {
       setErrorMessage(
         error.name === "NotAllowedError"
           ? "Permission Denied: Access blocked."
-          : error.message
+          : error.message,
       );
     }
   };

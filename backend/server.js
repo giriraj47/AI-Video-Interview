@@ -7,6 +7,10 @@ import mongoose from "mongoose";
 import { setupInterviewSocket } from "./sockets/interviewHandler.js";
 import interviewRoute from "./routes/interview.route.js";
 import adminRoute from "./routes/admin.route.js";
+import uploadRoute from "./routes/upload.route.js";
+
+// Initialize BullMQ workers
+import "./workers/videoWorker.js";
 
 const app = express();
 app.use(cors());
@@ -15,6 +19,7 @@ app.use(express.json());
 // ── Route Mounting ──
 app.use("/api", interviewRoute);
 app.use("/api/admin", adminRoute);
+app.use("/api", uploadRoute);
 
 // ── MongoDB ──
 mongoose
