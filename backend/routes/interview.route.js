@@ -1,7 +1,6 @@
 import express from "express";
 import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
-import { inngest } from "../inngest/client.js";
 
 const router = express.Router();
 
@@ -48,7 +47,7 @@ router.post("/start-interview", async (req, res) => {
   }
 });
 
-// Save/Finalize Interview - triggers Inngest evaluation
+// Save/Finalize Interview - Run evaluation and mark as COMPLETE immediately!
 router.post("/save-interview", async (req, res) => {
   try {
     const { interviewId } = req.body;
@@ -59,21 +58,53 @@ router.post("/save-interview", async (req, res) => {
         .json({ error: "Missing required field: interviewId" });
     }
 
-    // Send event to Inngest for durable evaluation
-    await inngest.send({
-      name: "interview/evaluate",
-      data: { interviewId },
+    console.log(
+      `[Background] Starting evaluation for interview: ${interviewId}`,
+    );
+
+    // Ensure the in-memory session is available
+    let session = groqService.sessions[interviewId];
+    if (!session) {
+      const interviewDb = await Interview.findById(interviewId);
+      if (!interviewDb) {
+        console.error(
+          `[Background] Interview document not found: ${interviewId}`,
+        );
+        return res.status(404).json({ error: "Interview not found" });
+      }
+      console.log(
+        `[Background] Hydrating session from database: ${interviewId}`,
+      );
+      groqService.initSession(interviewId, interviewDb.transcript);
+    }
+
+    // Run Groq LLM evaluation
+    const evaluation = await groqService.evaluateInterview(interviewId);
+
+    // Save results to MongoDB AND MARK AS COMPLETE immediately!
+    console.log(
+      `[Background] Saving evaluation to database: ${interviewId}`,
+    );
+    await Interview.findByIdAndUpdate(interviewId, {
+      evaluation,
+      status: "Completed", // Mark complete right away!
     });
+
+    // Cleanup in-memory session
+    groqService.cleanupSession(interviewId);
+    console.log(
+      `[Background] ✅ Interview finalization complete: ${interviewId}`,
+    );
 
     res.status(200).json({
       success: true,
-      message: "Interview evaluation queued (check Inngest dashboard for progress)",
+      message: "Interview completed successfully!",
       id: interviewId,
     });
   } catch (error) {
     console.error("[API] Error in save-interview route:", error);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to queue interview evaluation" });
+      res.status(500).json({ error: "Failed to complete interview" });
     }
   }
 });

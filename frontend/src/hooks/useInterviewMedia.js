@@ -15,63 +15,6 @@ export function useInterviewMedia() {
   const videoRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
 
-  const BACKEND_URL =
-    process.env.NODE_ENV === "production"
-      ? "https://ai-video-interview-1-ca9s.onrender.com"
-      : "http://localhost:4000";
-
-  // Helper: Upload a single chunk to Cloudinary
-  const uploadChunk = async (
-    chunk, chunkNumber, totalChunks, signedData, interviewId) => {
-    const formData = new FormData();
-    formData.append("file", chunk, `interview-part-${chunkNumber}`);
-    formData.append("api_key", signedData.apiKey);
-    formData.append("timestamp", signedData.timestamp);
-    formData.append("signature", signedData.signature);
-    formData.append("public_id", signedData.publicId);
-    formData.append("resource_type", "video");
-    formData.append("eager", "w_640,h_480,c_limit,f_mp4");
-    formData.append("eager_async", "true");
-    formData.append("chunk_size", signedData.chunkSize.toString());
-    formData.append("total_chunks", totalChunks.toString());
-    formData.append("chunk_index", chunkNumber.toString());
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${signedData.cloudName}/video/upload`,
-      {
-        method: "POST",
-        body: formData,
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Chunk ${chunkNumber} upload failed`);
-    }
-
-    return await response.json();
-  };
-
-  // Helper: Chunk and upload the full video
-  const chunkedSignedUpload = async (videoBlob, signedData, interviewId) => {
-    const chunkSize = signedData.chunkSize;
-    const totalChunks = Math.ceil(videoBlob.size / chunkSize);
-    console.log(`[Media] Starting chunked upload: ${totalChunks} chunks total`);
-
-    for (let i = 1; i <= totalChunks; i++) {
-      const start = (i - 1) * chunkSize;
-      const end = Math.min(i * chunkSize, videoBlob.size);
-      const chunk = videoBlob.slice(start, end);
-
-      console.log(`[Media] Uploading chunk ${i}/${totalChunks}`);
-      const result = await uploadChunk(chunk, i, totalChunks, signedData, interviewId);
-
-      // If this is the last chunk, return the final result
-      if (i === totalChunks) {
-        return result;
-      }
-    }
-  };
-
   // 🚀 Start session recording using clean lightweight configuration
   const startVideoRecording = (stream) => {
     if (!stream) return;
@@ -117,9 +60,9 @@ export function useInterviewMedia() {
     }
   };
 
-  // 🛑 Stop recording and return server upload confirmation back to page context lifecycle
+  // 🛑 Stop recording (NO UPLOAD - we removed Cloudinary!)
   const stopVideoRecordingAndUpload = async (interviewId) => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       if (
         !videoRecorderRef.current ||
         videoRecorderRef.current.state === "inactive"
@@ -128,59 +71,9 @@ export function useInterviewMedia() {
         return resolve(null);
       }
 
-      videoRecorderRef.current.onstop = async () => {
-        console.log("[Media] Building final video blob...");
-        const videoBlob = new Blob(videoChunksRef.current, {
-          type: "video/webm",
-        });
-        console.log(`[Media] Final video size: ${(videoBlob.size / (1024 * 1024)).toFixed(2)} MB`);
-
-        try {
-          // First try signed CHUNKED upload to Cloudinary (way more reliable for large files
-          const signedUrlResponse = await fetch(
-            `${BACKEND_URL}/api/signed-upload-url?interviewId=${interviewId}`
-          );
-
-          if (signedUrlResponse.ok) {
-            const signedData = await signedUrlResponse.json();
-            console.log("[Media] Using signed chunked upload to Cloudinary...");
-            try {
-              const cloudinaryData = await chunkedSignedUpload(videoBlob, signedData, interviewId);
-              console.log("[Media] Signed chunked upload complete!");
-              resolve({
-                success: true,
-                videoUrl: cloudinaryData.secure_url,
-                message: "Video uploaded successfully"
-              });
-              return;
-            } catch (uploadErr) {
-              console.warn("[Media] Chunked upload failed, falling back to backend upload:", uploadErr);
-            }
-          }
-        } catch (signedErr) {
-          console.warn(
-            "[Media] Signed upload attempt failed, falling back to backend upload:",
-            signedErr
-          );
-        }
-
-        // Fallback to backend upload (Inngest will handle it reliably!)
-        try {
-          console.log("[Media] Using fallback backend upload...");
-          const formData = new FormData();
-          formData.append("video", videoBlob, "interview.webm");
-          formData.append("interviewId", interviewId);
-
-          const response = await fetch(`${BACKEND_URL}/api/upload-recording`, {
-            method: "POST",
-            body: formData,
-          });
-          const data = await response.json();
-          resolve(data);
-        } catch (err) {
-          console.error("Failed to upload video stream to server:", err);
-          reject(err);
-        }
+      videoRecorderRef.current.onstop = () => {
+        console.log("[Media] Recording stopped, skipping Cloudinary upload (disabled for now).");
+        resolve({ success: true, message: "Recording stopped successfully" });
       };
 
       videoRecorderRef.current.stop();
@@ -203,7 +96,7 @@ export function useInterviewMedia() {
       const webcam = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
-          height: { ideal: 720 },
+          height: { ideal: 72 },
           facingMode: "user",
         },
         audio: true,
