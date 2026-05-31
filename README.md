@@ -2,6 +2,9 @@
 
 A modern AI-powered video interview platform that enables remote candidate screening with real-time conversation, proctoring, and evaluation.
 
+live link : https://ai-video-interview-sandy.vercel.app
+admin link : https://ai-video-interview-sandy.vercel.app/admin?secret=giri_admin_2026_secure
+
 ## Problem Understanding
 
 ### What Problem Are We Solving?
