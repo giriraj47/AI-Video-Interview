@@ -8,14 +8,29 @@ class GroqService {
       timeout: 45000,
     });
     this.sessions = {}; // Maps interviewId to conversation history
-    this.maxQuestions = 1;
+    this.maxQuestions = 5;
+    this.jobDescription = `We are hiring a Backend Developer Intern to support our development team in building and maintaining backend services and APIs.
+
+Responsibilities:
+
+Assist in backend development tasks
+Work with APIs and databases
+Help maintain server-side functionality
+Collaborate with frontend developers
+Requirements:
+
+Basic knowledge of Node.js or backend development concepts
+Understanding of APIs and databases
+Familiarity with Git/GitHub is a plus
+Willingness to learn and grow
+`;
   }
 
   // Initialize a new interview session or reload an existing one
   initSession(interviewId, existingTranscript = null) {
     const systemPrompt = {
       role: "system",
-      content: `You are an expert AI Technical Recruiter. You are interviewing a candidate for a Full Stack Developer position. 
+      content: `You are an expert AI Technical Recruiter. You are interviewing a candidate for this job description: ${this.jobDescription} 
 You must ask exactly ${this.maxQuestions} questions total.
 Always respond with a valid JSON object matching this schema:
 {
@@ -25,7 +40,6 @@ Always respond with a valid JSON object matching this schema:
 }
 Keep your questions professional, concise, and conversational. Do not output anything outside of the JSON object.
 Your first task is to greet the candidate and ask the first technical question.
-But right now its just in testing phase to ask really simple question like what is react no followups.
 `,
     };
 
