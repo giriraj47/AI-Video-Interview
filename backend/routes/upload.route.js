@@ -1,8 +1,6 @@
 import express from "express";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -11,7 +9,6 @@ import { Interview } from "../models/Interview.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const router = express.Router();
 
 // Configure Cloudinary
@@ -27,7 +24,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Setup disk storage with better error handling
+// Setup disk storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);
@@ -61,7 +58,7 @@ const upload = multer({
   },
 });
 
-// Background video processing function (replaces Inngest
+// Background video processing function - NO FFmpeg!
 const processVideoInBackground = async (
   interviewId,
   inputPath,
@@ -69,50 +66,20 @@ const processVideoInBackground = async (
   fileSize,
   mimetype,
 ) => {
-  let optimizedPath = null;
   try {
     console.log(
-      `[Background] Starting video processing for interview: ${interviewId}`,
+      `[Background] Starting Cloudinary upload for interview: ${interviewId}`,
     );
 
-    // Step 1: Optimize with FFmpeg
-    optimizedPath = path.join(
-      path.dirname(inputPath),
-      `${interviewId}_optimized_${Date.now()}.mp4`,
-    );
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .output(optimizedPath)
-        .videoCodec("libx264")
-        .audioCodec("aac")
-        .outputOptions(["-crf 28", "-preset veryfast", "-movflags +faststart"])
-        .on("start", (commandLine) => {
-          console.log(`[FFmpeg] Spawned: ${commandLine}`);
-        })
-        .on("progress", (progress) => {
-          if (progress.percent) {
-            console.log(`[FFmpeg] Progress: ${Math.round(progress.percent)}%`);
-          }
-        })
-        .on("end", () => {
-          console.log(`[FFmpeg] Optimization complete: ${optimizedPath}`);
-          resolve();
-        })
-        .on("error", (err) => {
-          console.error(`[FFmpeg] Error: ${err.message}`);
-          reject(err);
-        })
-        .run();
-    });
-
-    // Step 2: Upload to Cloudinary
-    console.log(`[Background] Uploading to Cloudinary: ${optimizedPath}`);
-    const uploadResult = await cloudinary.uploader.upload(optimizedPath, {
+    // Step 1: Upload raw file directly to Cloudinary (Cloudinary handles optimization)
+    console.log(`[Background] Uploading to Cloudinary: ${inputPath}`);
+    const uploadResult = await cloudinary.uploader.upload(inputPath, {
       resource_type: "video",
       public_id: `interviews/${interviewId}`,
       overwrite: true,
       tags: ["interview", "ai-recruiter"],
+      eager: [{ width: 640, height: 480, crop: "limit", format: "mp4" }],
+      eager_async: true,
       context: {
         interviewId,
         originalFilename,
@@ -121,12 +88,11 @@ const processVideoInBackground = async (
       },
     });
 
-    // Step 3: Update Database
+    // Step 2: Update Database
     console.log(
       `[Background] Updating database with video URL for: ${interviewId}`,
     );
 
-    // First get the current interview to check if evaluation exists
     const currentInterview = await Interview.findById(interviewId);
     const shouldMarkComplete =
       currentInterview &&
@@ -142,41 +108,37 @@ const processVideoInBackground = async (
       { new: true },
     );
 
-    // Step 4: Cleanup
-    [inputPath, optimizedPath].forEach((filePath) => {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`[Background] Deleted: ${filePath}`);
-      }
-    });
+    // Step 3: Cleanup
+    if (fs.existsSync(inputPath)) {
+      fs.unlinkSync(inputPath);
+      console.log(`[Background] Deleted temp file: ${inputPath}`);
+    }
 
     console.log(
-      `[Background] Video processing complete for interview: ${interviewId}`,
+      `[Background] Video upload complete for interview: ${interviewId}`,
     );
   } catch (error) {
     console.error(
-      `[Background] Video processing failed for ${interviewId}:`,
+      `[Background] Video upload failed for ${interviewId}:`,
       error,
     );
 
     // Cleanup on failure
-    [inputPath, optimizedPath].forEach((filePath) => {
-      if (filePath && fs.existsSync(filePath)) {
-        try {
-          fs.unlinkSync(filePath);
-          console.log(`[Background] Cleaned up: ${filePath}`);
-        } catch (cleanupErr) {
-          console.error(
-            `[Background] Failed to clean up ${filePath}:`,
-            cleanupErr,
-          );
-        }
+    if (fs.existsSync(inputPath)) {
+      try {
+        fs.unlinkSync(inputPath);
+        console.log(`[Background] Cleaned up temp file: ${inputPath}`);
+      } catch (cleanupErr) {
+        console.error(
+          `[Background] Failed to clean up temp file:`,
+          cleanupErr,
+        );
       }
-    });
+    }
   }
 };
 
-// Endpoint to get Cloudinary signed upload URL (frontend can upload directly)
+// Endpoint to get Cloudinary signed upload URL
 router.get("/signed-upload-url", (req, res) => {
   const { interviewId } = req.query;
 
@@ -288,7 +250,6 @@ router.post(
         const interviewId = publicId.split("/").pop();
 
         if (interviewId && body.secure_url) {
-          // First get the current interview to check if evaluation exists
           const currentInterview = await Interview.findById(interviewId);
           const shouldMarkComplete =
             currentInterview &&
