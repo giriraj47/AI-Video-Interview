@@ -8,21 +8,8 @@ class GroqService {
       timeout: 45000,
     });
     this.sessions = {}; // Maps interviewId to conversation history
-    this.maxQuestions = 5;
-    this.jobDescription = `We are hiring a Backend Developer Intern to support our development team in building and maintaining backend services and APIs.
-
-Responsibilities:
-
-Assist in backend development tasks
-Work with APIs and databases
-Help maintain server-side functionality
-Collaborate with frontend developers
-Requirements:
-
-Basic knowledge of Node.js or backend development concepts
-Understanding of APIs and databases
-Familiarity with Git/GitHub is a plus
-Willingness to learn and grow
+    this.maxQuestions = 1;
+    this.jobDescription = `front end intern
 `;
   }
 
@@ -40,6 +27,7 @@ Always respond with a valid JSON object matching this schema:
 }
 Keep your questions professional, concise, and conversational. Do not output anything outside of the JSON object.
 Your first task is to greet the candidate and ask the first technical question.
+this is just a test run ask a basic question like how are you and stuff.
 `,
     };
 
