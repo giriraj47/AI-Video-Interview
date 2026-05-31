@@ -8,6 +8,9 @@ import { setupInterviewSocket } from "./sockets/interviewHandler.js";
 import uploadRoute from "./routes/upload.route.js";
 import interviewRoute from "./routes/interview.route.js";
 import adminRoute from "./routes/admin.route.js";
+import { serve } from "inngest/express";
+import { inngest } from "./inngest/client.js";
+import * as inngestFunctions from "./inngest/functions.js";
 
 const app = express();
 app.use(cors());
@@ -17,6 +20,17 @@ app.use(express.json());
 app.use("/api", uploadRoute);
 app.use("/api", interviewRoute);
 app.use("/api/admin", adminRoute);
+
+// ── Inngest Middleware (for durable background jobs) ──
+app.use(
+  "/api/inngest",
+  serve({
+    client: inngest,
+    functions: Object.values(inngestFunctions),
+    // Disable signature validation in development (for local dev server)
+    validateSignature: process.env.NODE_ENV === "production",
+  }),
+);
 
 // ── MongoDB ──
 mongoose
@@ -42,4 +56,5 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`🚀 AI Backend running on port ${PORT}`);
+  console.log(`📊 Inngest Dev Server: http://localhost:${PORT}/api/inngest`);
 });

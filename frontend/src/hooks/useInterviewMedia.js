@@ -20,6 +20,58 @@ export function useInterviewMedia() {
       ? "https://ai-video-interview-1-ca9s.onrender.com"
       : "http://localhost:4000";
 
+  // Helper: Upload a single chunk to Cloudinary
+  const uploadChunk = async (
+    chunk, chunkNumber, totalChunks, signedData, interviewId) => {
+    const formData = new FormData();
+    formData.append("file", chunk, `interview-part-${chunkNumber}`);
+    formData.append("api_key", signedData.apiKey);
+    formData.append("timestamp", signedData.timestamp);
+    formData.append("signature", signedData.signature);
+    formData.append("public_id", signedData.publicId);
+    formData.append("resource_type", "video");
+    formData.append("eager", "w_640,h_480,c_limit,f_mp4");
+    formData.append("eager_async", "true");
+    formData.append("chunk_size", signedData.chunkSize.toString());
+    formData.append("total_chunks", totalChunks.toString());
+    formData.append("chunk_index", chunkNumber.toString());
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${signedData.cloudName}/video/upload`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Chunk ${chunkNumber} upload failed`);
+    }
+
+    return await response.json();
+  };
+
+  // Helper: Chunk and upload the full video
+  const chunkedSignedUpload = async (videoBlob, signedData, interviewId) => {
+    const chunkSize = signedData.chunkSize;
+    const totalChunks = Math.ceil(videoBlob.size / chunkSize);
+    console.log(`[Media] Starting chunked upload: ${totalChunks} chunks total`);
+
+    for (let i = 1; i <= totalChunks; i++) {
+      const start = (i - 1) * chunkSize;
+      const end = Math.min(i * chunkSize, videoBlob.size);
+      const chunk = videoBlob.slice(start, end);
+
+      console.log(`[Media] Uploading chunk ${i}/${totalChunks}`);
+      const result = await uploadChunk(chunk, i, totalChunks, signedData, interviewId);
+
+      // If this is the last chunk, return the final result
+      if (i === totalChunks) {
+        return result;
+      }
+    }
+  };
+
   // 🚀 Start session recording using clean lightweight configuration
   const startVideoRecording = (stream) => {
     if (!stream) return;
@@ -29,7 +81,7 @@ export function useInterviewMedia() {
       videoRecorderRef.current.state !== "inactive"
     ) {
       console.warn(
-        "[Media] Video recorder already running. Aborting duplicate spawn.",
+        "[Media] Video recorder already running. Aborting duplicate spawn."
       );
       return;
     }
@@ -49,7 +101,7 @@ export function useInterviewMedia() {
         if (e.data && e.data.size > 0) {
           const timestamp = new Date().toLocaleTimeString();
           console.log(
-            `[MediaRecorder] 📦 Chunk captured safely! Size: ${(e.data.size / 1024).toFixed(2)} KB at ${timestamp}`,
+            `[MediaRecorder] 📦 Chunk captured safely! Size: ${(e.data.size / 1024).toFixed(2)} KB at ${timestamp}`
           );
           videoChunksRef.current.push(e.data);
         }
@@ -58,7 +110,7 @@ export function useInterviewMedia() {
       // Check chunks every 5 seconds to keep memory buffer light but stable
       videoRecorderRef.current.start(5000);
       console.log(
-        "[Media] Full session video recording started safely with lightweight codec.",
+        "[Media] Full session video recording started safely with lightweight codec."
       );
     } catch (error) {
       console.error("Failed to spin up MediaRecorder:", error);
@@ -81,48 +133,28 @@ export function useInterviewMedia() {
         const videoBlob = new Blob(videoChunksRef.current, {
           type: "video/webm",
         });
+        console.log(`[Media] Final video size: ${(videoBlob.size / (1024 * 1024)).toFixed(2)} MB`);
 
         try {
-          // First try signed upload to Cloudinary (more efficient)
+          // First try signed CHUNKED upload to Cloudinary (way more reliable for large files
           const signedUrlResponse = await fetch(
             `${BACKEND_URL}/api/signed-upload-url?interviewId=${interviewId}`
           );
 
           if (signedUrlResponse.ok) {
             const signedData = await signedUrlResponse.json();
-            console.log("[Media] Using signed upload to Cloudinary...");
-            
-            const cloudinaryFormData = new FormData();
-            cloudinaryFormData.append("file", videoBlob, "interview.webm");
-            cloudinaryFormData.append("api_key", signedData.apiKey);
-            cloudinaryFormData.append("timestamp", signedData.timestamp);
-            cloudinaryFormData.append("signature", signedData.signature);
-            cloudinaryFormData.append("public_id", signedData.publicId);
-            cloudinaryFormData.append("resource_type", "video");
-            cloudinaryFormData.append("eager", "w_640,h_480,c_limit,f_mp4");
-            cloudinaryFormData.append("eager_async", "true");
-
-            const cloudinaryResponse = await fetch(
-              `https://api.cloudinary.com/v1_1/${signedData.cloudName}/video/upload`,
-              {
-                method: "POST",
-                body: cloudinaryFormData,
-              }
-            );
-
-            if (cloudinaryResponse.ok) {
-              const cloudinaryData = await cloudinaryResponse.json();
-              console.log("[Media] Signed upload complete!");
-              resolve({ 
-                success: true, 
+            console.log("[Media] Using signed chunked upload to Cloudinary...");
+            try {
+              const cloudinaryData = await chunkedSignedUpload(videoBlob, signedData, interviewId);
+              console.log("[Media] Signed chunked upload complete!");
+              resolve({
+                success: true,
                 videoUrl: cloudinaryData.secure_url,
                 message: "Video uploaded successfully"
               });
               return;
-            } else {
-              console.warn(
-                "[Media] Signed upload failed, falling back to backend upload"
-              );
+            } catch (uploadErr) {
+              console.warn("[Media] Chunked upload failed, falling back to backend upload:", uploadErr);
             }
           }
         } catch (signedErr) {
@@ -132,7 +164,7 @@ export function useInterviewMedia() {
           );
         }
 
-        // Fallback to backend upload
+        // Fallback to backend upload (Inngest will handle it reliably!)
         try {
           console.log("[Media] Using fallback backend upload...");
           const formData = new FormData();
@@ -195,7 +227,7 @@ export function useInterviewMedia() {
       setErrorMessage(
         error.name === "NotAllowedError"
           ? "Permission Denied: Access blocked."
-          : error.message,
+          : error.message
       );
     }
   };

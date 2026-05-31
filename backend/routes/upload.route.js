@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Interview } from "../models/Interview.js";
+import { inngest } from "../inngest/client.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -41,7 +42,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB limit
+    fileSize: 1024 * 1024 * 1024, // 1GB limit (increased!)
   },
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = [
@@ -58,87 +59,7 @@ const upload = multer({
   },
 });
 
-// Background video processing function - NO FFmpeg!
-const processVideoInBackground = async (
-  interviewId,
-  inputPath,
-  originalFilename,
-  fileSize,
-  mimetype,
-) => {
-  try {
-    console.log(
-      `[Background] Starting Cloudinary upload for interview: ${interviewId}`,
-    );
-
-    // Step 1: Upload raw file directly to Cloudinary (Cloudinary handles optimization)
-    console.log(`[Background] Uploading to Cloudinary: ${inputPath}`);
-    const uploadResult = await cloudinary.uploader.upload(inputPath, {
-      resource_type: "video",
-      public_id: `interviews/${interviewId}`,
-      overwrite: true,
-      tags: ["interview", "ai-recruiter"],
-      eager: [{ width: 640, height: 480, crop: "limit", format: "mp4" }],
-      eager_async: true,
-      context: {
-        interviewId,
-        originalFilename,
-        originalSize: fileSize,
-        originalMimeType: mimetype,
-      },
-    });
-
-    // Step 2: Update Database
-    console.log(
-      `[Background] Updating database with video URL for: ${interviewId}`,
-    );
-
-    const currentInterview = await Interview.findById(interviewId);
-    const shouldMarkComplete =
-      currentInterview &&
-      currentInterview.evaluation &&
-      currentInterview.evaluation.overallScore !== undefined;
-
-    await Interview.findByIdAndUpdate(
-      interviewId,
-      {
-        videoUrl: uploadResult.secure_url,
-        ...(shouldMarkComplete ? { status: "Completed" } : {}),
-      },
-      { new: true },
-    );
-
-    // Step 3: Cleanup
-    if (fs.existsSync(inputPath)) {
-      fs.unlinkSync(inputPath);
-      console.log(`[Background] Deleted temp file: ${inputPath}`);
-    }
-
-    console.log(
-      `[Background] Video upload complete for interview: ${interviewId}`,
-    );
-  } catch (error) {
-    console.error(
-      `[Background] Video upload failed for ${interviewId}:`,
-      error,
-    );
-
-    // Cleanup on failure
-    if (fs.existsSync(inputPath)) {
-      try {
-        fs.unlinkSync(inputPath);
-        console.log(`[Background] Cleaned up temp file: ${inputPath}`);
-      } catch (cleanupErr) {
-        console.error(
-          `[Background] Failed to clean up temp file:`,
-          cleanupErr,
-        );
-      }
-    }
-  }
-};
-
-// Endpoint to get Cloudinary signed upload URL
+// Endpoint to get Cloudinary signed upload URL (frontend direct)
 router.get("/signed-upload-url", (req, res) => {
   const { interviewId } = req.query;
 
@@ -155,6 +76,7 @@ router.get("/signed-upload-url", (req, res) => {
       overwrite: true,
       eager: [{ width: 640, height: 480, crop: "limit", format: "mp4" }],
       eager_async: true,
+      chunk_size: 6000000, // 6MB chunks for large files
     };
 
     const signature = cloudinary.utils.api_sign_request(
@@ -168,6 +90,7 @@ router.get("/signed-upload-url", (req, res) => {
       apiKey: process.env.CLOUDINARY_API_KEY,
       cloudName: process.env.CLOUDINARY_CLOUD_NAME,
       publicId: `interviews/${interviewId}`,
+      chunkSize: 6000000,
     });
   } catch (error) {
     console.error("Error generating signed URL:", error);
@@ -193,7 +116,7 @@ router.post("/upload-recording", upload.single("video"), async (req, res) => {
   const inputPath = req.file.path;
 
   console.log(
-    `[Backend] Received video upload for interview: ${interviewId}, size: ${(req.file.size / (1024 * 1024)).toFixed(2)} MB`,
+    `[Backend] Received video for interview: ${interviewId}, size: ${(req.file.size / (1024 * 1024)).toFixed(2)} MB`,
   );
 
   try {
@@ -202,34 +125,37 @@ router.post("/upload-recording", upload.single("video"), async (req, res) => {
       status: "In Progress",
     });
 
-    // Start processing in background
-    processVideoInBackground(
-      interviewId,
-      inputPath,
-      req.file.originalname,
-      req.file.size,
-      req.file.mimetype,
-    );
+    // Send event to Inngest for durable background processing
+    await inngest.send({
+      name: "video/process",
+      data: {
+        interviewId,
+        inputPath,
+        originalFilename: req.file.originalname,
+        fileSize: req.file.size,
+        mimetype: req.file.mimetype,
+      },
+    });
 
     // Return immediately
     return res.json({
       success: true,
-      message: "Video upload received, processing in background",
+      message: "Video queued for upload (check Inngest dashboard for progress)",
     });
   } catch (error) {
-    console.error("Error initiating video processing:", error);
+    console.error("Error queuing video upload:", error);
 
     if (fs.existsSync(inputPath)) {
       fs.unlinkSync(inputPath);
     }
 
     return res.status(500).json({
-      error: "Failed to initiate video processing",
+      error: "Failed to queue video upload",
     });
   }
 });
 
-// Webhook endpoint for Cloudinary notifications
+// Webhook endpoint for Cloudinary notifications (for frontend signed uploads)
 router.post(
   "/cloudinary-webhook",
   express.raw({ type: "application/json" }),
@@ -250,19 +176,22 @@ router.post(
         const interviewId = publicId.split("/").pop();
 
         if (interviewId && body.secure_url) {
-          const currentInterview = await Interview.findById(interviewId);
-          const shouldMarkComplete =
-            currentInterview &&
-            currentInterview.evaluation &&
-            currentInterview.evaluation.overallScore !== undefined;
-
+          // First, save the video URL
           await Interview.findByIdAndUpdate(interviewId, {
             videoUrl: body.secure_url,
-            ...(shouldMarkComplete ? { status: "Completed" } : {}),
           });
 
+          // Then, check if we can mark as Completed
+          const interview = await Interview.findById(interviewId);
+          if (interview && interview.evaluation && interview.evaluation.overallScore !== undefined) {
+            await Interview.findByIdAndUpdate(interviewId, { status: "Completed" });
+            console.log(
+              `[Cloudinary Webhook] Marked interview ${interviewId} as Completed`,
+            );
+          }
+
           console.log(
-            `[Cloudinary Webhook] Updated video URL for interview: ${interviewId}`,
+            `[Cloudinary Webhook] Saved video URL for interview: ${interviewId}`,
           );
         }
       }

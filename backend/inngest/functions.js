@@ -2,12 +2,8 @@ import { inngest } from "./client.js";
 import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
 import { v2 as cloudinary } from "cloudinary";
-import ffmpeg from "fluent-ffmpeg";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import fs from "fs";
 import path from "path";
-
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // Configure Cloudinary
 cloudinary.config({
@@ -16,73 +12,75 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-export const processInterviewFinalization = inngest.createFunction(
+/**
+ * Checks if both videoUrl and evaluation exist, then sets status to Completed
+ */
+const checkAndCompleteInterview = async (interviewId) => {
+  const interview = await Interview.findById(interviewId);
+  if (!interview) return false;
+
+  if (interview.videoUrl && interview.evaluation && interview.evaluation.overallScore !== undefined) {
+    await Interview.findByIdAndUpdate(interviewId, { status: "Completed" });
+    console.log(`[Inngest] Marked interview ${interviewId} as Completed (both video and evaluation ready)`);
+    return true;
+  }
+  return false;
+};
+
+export const processInterviewEvaluation = inngest.createFunction(
   {
-    id: "process-interview-finalization",
-    triggers: [{ event: "interview/finalized" }],
+    id: "process-interview-evaluation",
+    retries: {
+      attempts: 3,
+      backoff: {
+        type: "exponential",
+        factor: 2,
+      },
+    },
+    triggers: [{ event: "interview/evaluate" }],
   },
   async ({ event, step }) => {
-    const { interviewId, videoUrl } = event.data;
+    const { interviewId } = event.data;
+    console.log(`[Inngest] Starting evaluation for interview: ${interviewId}`);
 
-    console.log(
-      `[Inngest Worker] Received finalization task for ID: ${interviewId}`,
-    );
-
-    await step.sleep("wait-for-db-sync", "3s");
-
-    const evaluation = await step.run(
-      "evaluate-transcript-via-groq",
-      async () => {
-        let session = groqService.sessions[interviewId];
-
-        if (!session) {
-          console.log(
-            `[Inngest Worker] Fetching document ${interviewId} from MongoDB...`,
-          );
-          const interviewDb = await Interview.findById(interviewId);
-
-          if (!interviewDb) {
-            throw new Error(
-              `Interview document not found for ID: ${interviewId}`,
-            );
-          }
-
-          console.log(
-            `[Inngest Worker] Hydrating memory session context for: ${interviewId}`,
-          );
-          groqService.initSession(interviewId, interviewDb.transcript);
-        }
-
-        return await groqService.evaluateInterview(interviewId);
-      },
-    );
-
-    await step.run("save-to-mongodb", async () => {
-      const updateFields = {
-        evaluation,
-        status: "Completed",
-      };
-      if (videoUrl) {
-        updateFields.videoUrl = videoUrl;
+    const evaluation = await step.run("evaluate-transcript-via-groq", async () => {
+      let session = groqService.sessions[interviewId];
+      if (!session) {
+        console.log(`[Inngest] Hydrating session from DB for: ${interviewId}`);
+        const interviewDb = await Interview.findById(interviewId);
+        if (!interviewDb) throw new Error(`Interview ${interviewId} not found`);
+        groqService.initSession(interviewId, interviewDb.transcript);
       }
+      return await groqService.evaluateInterview(interviewId);
+    });
 
-      return await Interview.findByIdAndUpdate(interviewId, updateFields, {
-        new: true,
-      });
+    await step.run("save-evaluation-to-mongodb", async () => {
+      return await Interview.findByIdAndUpdate(
+        interviewId,
+        { evaluation },
+        { new: true }
+      );
+    });
+
+    await step.run("check-and-complete-status", async () => {
+      return await checkAndCompleteInterview(interviewId);
     });
 
     await step.run("cleanup-session-memory", async () => {
       groqService.cleanupSession(interviewId);
       return { success: true };
     });
-  },
+
+    console.log(`[Inngest] Evaluation complete for interview: ${interviewId}`);
+    return { success: true, interviewId, evaluation };
+  }
 );
 
 export const processVideoUpload = inngest.createFunction(
   {
     id: "process-video-upload",
     retries: {
-      attempts: 3,
+      attempts: 5, // More retries for video uploads
       backoff: {
         type: "exponential",
         factor: 2,
@@ -93,145 +91,77 @@ export const processVideoUpload = inngest.createFunction(
   async ({ event, step }) => {
     const { interviewId, inputPath, originalFilename, fileSize, mimetype } =
       event.data;
-
-    console.log(
-      `[Inngest Worker] Starting video processing for interview: ${interviewId}`,
-    );
-
-    let optimizedPath = null;
+    console.log(`[Inngest] Starting video upload for interview: ${interviewId}`);
 
     try {
-      // Step 1: Optimize video with FFmpeg
-      optimizedPath = await step.run("optimize-video-with-ffmpeg", async () => {
-        return new Promise((resolve, reject) => {
-          const outputPath = path.join(
-            path.dirname(inputPath),
-            `${interviewId}_optimized_${Date.now()}.mp4`,
-          );
-
-          console.log(
-            `[Inngest Worker] Starting FFmpeg optimization for: ${originalFilename}`,
-          );
-
-          ffmpeg(inputPath)
-            .output(outputPath)
-            .videoCodec("libx264")
-            .audioCodec("aac")
-            .outputOptions([
-              "-crf 28",
-              "-preset veryfast",
-              "-movflags +faststart",
-            ])
-            .on("start", (commandLine) => {
-              console.log(`[FFmpeg] Spawned: ${commandLine}`);
-            })
-            .on("progress", (progress) => {
-              if (progress.percent) {
-                console.log(
-                  `[FFmpeg] Progress: ${Math.round(progress.percent)}%`,
-                );
-              }
-            })
-            .on("end", () => {
-              console.log(`[FFmpeg] Optimization complete: ${outputPath}`);
-              resolve(outputPath);
-            })
-            .on("error", (err) => {
-              console.error(`[FFmpeg] Error: ${err.message}`);
-              reject(err);
-            })
-            .run();
-        });
-      });
-
-      // Step 2: Upload to Cloudinary
+      // Step 1: Upload raw video DIRECTLY to Cloudinary (no FFmpeg, faster!)
       const uploadResult = await step.run("upload-to-cloudinary", async () => {
-        console.log(
-          `[Inngest Worker] Uploading to Cloudinary: ${optimizedPath}`,
-        );
-
-        return await cloudinary.uploader.upload(optimizedPath, {
+        console.log(`[Inngest] Uploading ${fileSize / (1024 * 1024)}MB to Cloudinary`);
+        return await cloudinary.uploader.upload_large(inputPath, {
           resource_type: "video",
           public_id: `interviews/${interviewId}`,
           overwrite: true,
           tags: ["interview", "ai-recruiter"],
+          eager: [{ width: 640, height: 480, crop: "limit", format: "mp4" }],
+          eager_async: true,
           context: {
             interviewId,
             originalFilename,
             originalSize: fileSize,
             originalMimeType: mimetype,
           },
+          chunk_size: 6000000, // 6MB chunks (Cloudinary recommended)
         });
       });
 
-      // Step 3: Update database with video URL
+      // Step 2: Update database with video URL
       await step.run("update-database", async () => {
-        console.log(
-          `[Inngest Worker] Updating database with video URL for: ${interviewId}`,
-        );
-
+        console.log(`[Inngest] Saving video URL for: ${interviewId}`);
         return await Interview.findByIdAndUpdate(
           interviewId,
-          {
-            videoUrl: uploadResult.secure_url,
-          },
-          { new: true },
+          { videoUrl: uploadResult.secure_url },
+          { new: true }
         );
       });
 
-      // Step 4: Cleanup temporary files
-      await step.run("cleanup-temporary-files", async () => {
-        const filesToDelete = [inputPath, optimizedPath];
+      // Step 3: Check if we can mark as Completed
+      await step.run("check-and-complete-status", async () => {
+        return await checkAndCompleteInterview(interviewId);
+      });
 
-        for (const filePath of filesToDelete) {
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(`[Inngest Worker] Deleted: ${filePath}`);
-          }
+      // Step 4: Cleanup temporary file
+      await step.run("cleanup-temporary-file", async () => {
+        if (fs.existsSync(inputPath)) {
+          fs.unlinkSync(inputPath);
+          console.log(`[Inngest] Deleted temp file: ${inputPath}`);
         }
-
         return { success: true };
       });
 
-      console.log(
-        `[Inngest Worker] Video processing complete for interview: ${interviewId}`,
-      );
-
+      console.log(`[Inngest] Video upload complete for interview: ${interviewId}`);
       return {
         success: true,
         interviewId,
         videoUrl: uploadResult.secure_url,
       };
     } catch (error) {
-      console.error(
-        `[Inngest Worker] Video processing failed for ${interviewId}:`,
-        error,
-      );
+      console.error(`[Inngest] Video upload failed for ${interviewId}:`, error);
 
       // Cleanup on failure
       await step.run("cleanup-on-failure", async () => {
-        const filesToDelete = [inputPath];
-        if (optimizedPath) filesToDelete.push(optimizedPath);
-
-        for (const filePath of filesToDelete) {
-          if (fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-              console.log(`[Inngest Worker] Cleaned up: ${filePath}`);
-            } catch (cleanupErr) {
-              console.error(
-                `[Inngest Worker] Failed to clean up ${filePath}:`,
-                cleanupErr,
-              );
-            }
+        if (fs.existsSync(inputPath)) {
+          try {
+            fs.unlinkSync(inputPath);
+            console.log(`[Inngest] Cleaned up temp file: ${inputPath}`);
+          } catch (cleanupErr) {
+            console.error(`[Inngest] Failed to clean up:`, cleanupErr);
           }
         }
-
         return { success: true };
       });
 
-      // Re-throw to trigger retries (if remaining)
+      // Re-throw to trigger retries
       throw error;
     }
-  },
+  }
 );

@@ -1,6 +1,7 @@
 import express from "express";
 import { Interview } from "../models/Interview.js";
 import { groqService } from "../services/groqService.js";
+import { inngest } from "../inngest/client.js";
 
 const router = express.Router();
 
@@ -47,7 +48,7 @@ router.post("/start-interview", async (req, res) => {
   }
 });
 
-// Save/Finalize Interview — responds INSTANTLY, processes in background
+// Save/Finalize Interview - triggers Inngest evaluation
 router.post("/save-interview", async (req, res) => {
   try {
     const { interviewId } = req.body;
@@ -58,75 +59,23 @@ router.post("/save-interview", async (req, res) => {
         .json({ error: "Missing required field: interviewId" });
     }
 
-    // 🚀 RESPOND IMMEDIATELY — release the frontend thread
-    res.status(200).json({
-      success: true,
-      message: "Interview finalization started in background.",
-      id: interviewId,
+    // Send event to Inngest for durable evaluation
+    await inngest.send({
+      name: "interview/evaluate",
+      data: { interviewId },
     });
 
-    // 🌀 BACKGROUND PROCESSING — runs after response is sent
-    (async () => {
-      try {
-        console.log(
-          `[Background] Starting evaluation for interview: ${interviewId}`,
-        );
-
-        // Ensure the in-memory session is available
-        let session = groqService.sessions[interviewId];
-        if (!session) {
-          const interviewDb = await Interview.findById(interviewId);
-          if (!interviewDb) {
-            console.error(
-              `[Background] Interview document not found: ${interviewId}`,
-            );
-            return;
-          }
-          console.log(
-            `[Background] Hydrating session from database: ${interviewId}`,
-          );
-          groqService.initSession(interviewId, interviewDb.transcript);
-        }
-
-        // Run Groq LLM evaluation
-        console.log(
-          `[Background] Running Groq evaluation for: ${interviewId}`,
-        );
-        const evaluation = await groqService.evaluateInterview(interviewId);
-
-        // Save results to MongoDB
-        console.log(
-          `[Background] Saving evaluation to database: ${interviewId}`,
-        );
-        
-        // First get the current interview to check if videoUrl exists
-        const currentInterview = await Interview.findById(interviewId);
-        const shouldMarkComplete = currentInterview && currentInterview.videoUrl;
-        
-        await Interview.findByIdAndUpdate(interviewId, {
-          evaluation,
-          ...(shouldMarkComplete ? { status: "Completed" } : {})
-        });
-
-        // Cleanup in-memory session
-        groqService.cleanupSession(interviewId);
-        console.log(
-          `[Background] ✅ Interview finalization complete: ${interviewId}`,
-        );
-      } catch (err) {
-        console.error(
-          `[Background] ❌ Error processing interview ${interviewId}:`,
-          err,
-        );
-      }
-    })();
+    res.status(200).json({
+      success: true,
+      message: "Interview evaluation queued (check Inngest dashboard for progress)",
+      id: interviewId,
+    });
   } catch (error) {
     console.error("[API] Error in save-interview route:", error);
     if (!res.headersSent) {
-      res.status(500).json({ error: "Failed to start interview finalization" });
+      res.status(500).json({ error: "Failed to queue interview evaluation" });
     }
   }
 });
 
 export default router;
-
