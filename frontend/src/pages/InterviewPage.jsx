@@ -87,9 +87,21 @@ export default function InterviewPage() {
     // 2. 🎥 STOP RECORDING & UPLOAD VIDEO — fire and forget (no await)
     //    The upload route handles Cloudinary + DB update in the background.
     if (media.stopVideoRecordingAndUpload) {
-      media.stopVideoRecordingAndUpload(targetInterviewId).catch((err) =>
-        console.error("[InterviewPage] Background video upload error:", err),
-      );
+      media.stopVideoRecordingAndUpload().then((result) => {
+        if (result && result.success && result.videoBlob) {
+          console.log("[InterviewPage] Uploading video in the background...");
+          const formData = new FormData();
+          formData.append("video", result.videoBlob, "interview.webm");
+          formData.append("interviewId", targetInterviewId);
+
+          fetch(`${BACKEND_URL}/api/upload-video`, {
+            method: "POST",
+            body: formData,
+          }).catch((err) =>
+            console.error("[InterviewPage] Background video upload error:", err),
+          );
+        }
+      });
     }
 
     // 3. 🏁 INSTANT NAVIGATION — user sees results page immediately
