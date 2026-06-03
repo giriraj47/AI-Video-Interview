@@ -9,44 +9,26 @@ class GroqService {
     });
     this.sessions = {}; // Maps interviewId to conversation history
     this.maxQuestions = 7;
-    this.jobDescription = `Role Overview
-We are looking for an enthusiastic and motivated MERN Stack Developer Intern to join our engineering team. In this role, you will get hands-on experience building scalable, real-world web applications. You will work closely with our senior developers and product managers to design, build, and maintain features across the entire software development lifecycle. If you have a solid foundation in JavaScript and a strong desire to master MongoDB, Express.js, React.js, and Node.js, we want to hear from you!
+    this.jobDescription = `Job description
+JOB Title: Technical Recruiter/ Technical Resource Specialist (Night Shift)
 
-Key Responsibilities
-Front-End Development: Assist in building responsive, user-friendly, and dynamic web interfaces using React.js, HTML5, and CSS3.
+Requirement:
 
-Back-End Development: Help develop and maintain server-side logic and RESTful APIs using Node.js and Express.js.
+Candidates from Domestic IT Recruitment / IT Consulting Firms/ US IT Staffing Industry.
+Hands on experience managing End to End Recruitment cycle (gathering requirements, candidate prospecting, candidate screening, Negotiations, candidate submission, follow-ups, Interview & On Boarding etc)
+Extensive experience in sourcing through Resume/Job Portals and/or Vendor Network.
+Ability to work independently and multi task in a fast paced environment.
+Strong communication and interpersonal skills.
+Willing to work in night shift (Work Timings 07:30pm to 04:30am) Mon - Fri.
+Roles & Responsibilities:
 
-Database Management: Work with MongoDB to write efficient queries, design basic schemas, and manage data storage.
 
-Debugging & Testing: Identify, troubleshoot, and resolve bugs. Write basic unit tests to ensure code reliability.
-
-Collaboration: Participate in daily stand-ups, team meetings, and code reviews. Work closely with UI/UX designers to translate designs into functional code.
-
-Version Control: Manage code repositories and collaborate using Git and GitHub/GitLab.
-
-Qualifications & Skills
-Education: Currently pursuing or recently graduated with a Bachelor’s/Master’s degree in Computer Science, Software Engineering, IT, or a related technical field.
-
-Core Languages: Strong foundational knowledge of JavaScript (ES6+), HTML, and CSS.
-
-Stack Familiarity: Basic understanding or academic/project-level experience with the MERN stack (MongoDB, Express, React, Node).
-
-Tools: Familiarity with version control systems (Git) and API testing tools (like Postman).
-
-Soft Skills: * Strong analytical and problem-solving abilities.
-
-Eagerness to learn new technologies and adapt to a fast-paced startup environment.
-
-Good written and verbal communication skills.
-
-Bonus Points if you have:
-
-Deployed personal projects using the MERN stack (please include links to your GitHub or portfolio!).
-
-Familiarity with state management libraries like Redux or Context API.
-
-Understanding of basic cloud deployment (e.g., AWS, Heroku, Vercel).
+Handle IT requirements for US based clients.
+Analyze the requirements to understand clients IT resource need and deliver qualified candidates/consultants with a minimum turnaround time.
+Source & Screen candidates from various sources like Internal Company Database, Resume/Job Portals and Professional Networking.
+Edit & Format resumes matching consistency and giving the resume visual cum technical perfection before presenting it to clients.
+Maintain Candidate/Vendor relations; keep them updated on the progress of submittals made.
+Handle Interviews, Closures, Paperwork & On Boarding.
 `;
   }
 
@@ -54,7 +36,13 @@ Understanding of basic cloud deployment (e.g., AWS, Heroku, Vercel).
   initSession(interviewId, existingTranscript = null) {
     const systemPrompt = {
       role: "system",
-      content: `You are an expert AI Technical Recruiter. You are interviewing a candidate for this job description: ${this.jobDescription} 
+      content: `You are an expert AI Technical Resource Specialist Recruiter.
+      You are interviewing a candidate for this job description: ${this.jobDescription}.
+      You will ask the questions and also give hints on how to answer. 
+      The candidate is someone who was a mern developer,
+      but is looking to switch to a technical resource specialist role,
+      so he does have much idea with this field. 
+      Your job is to help him learn all the essential things and become a successful technical resource specialist.
 You must ask exactly ${this.maxQuestions} questions total.
 Always respond with a valid JSON object matching this schema:
 {
@@ -64,7 +52,7 @@ Always respond with a valid JSON object matching this schema:
 }
 Keep your questions professional, concise, and conversational. Do not output anything outside of the JSON object.
 Your first task is to greet the candidate and ask the first technical question.
-Make the intrview last for 10 minutes to maximum 12 minutes.
+
 `,
     };
 
